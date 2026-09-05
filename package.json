@@ -1,0 +1,27 @@
+{
+  "name": "drone-match",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/api",
+    "apps/admin"
+  ],
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "db:start": "bash scripts/db.sh start",
+    "db:stop": "bash scripts/db.sh stop",
+    "db:setup": "npm run build -w @drone-match/api && npm run db:setup -w @drone-match/api",
+    "build": "npm run build --workspaces",
+    "test": "npm run test -w @drone-match/api",
+    "check": "npm run build && npm test",
+    "ios:build": "bash scripts/ios-build.sh",
+    "format": "prettier --write apps/admin/src apps/api/src apps/api/test scripts/dev.mjs",
+    "format:check": "prettier --check apps/admin/src apps/api/src apps/api/test scripts/dev.mjs"
+  },
+  "devDependencies": {
+    "prettier": "^3.9.6"
+  }
+}

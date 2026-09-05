@@ -1,0 +1,38 @@
+name: Build and verify
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  web-api:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: drone
+          POSTGRES_PASSWORD: local_ci_only
+          POSTGRES_DB: drone_match
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U drone -d drone_match"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://drone:local_ci_only@localhost:5432/drone_match
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run format:check
+  ios:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build SwiftUI app for the simulator
+        run: bash scripts/ios-build.sh
