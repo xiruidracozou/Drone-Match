@@ -307,22 +307,21 @@ function App() {
         <section className="login-brand">
           <div className="brand">
             <ThunderboltOutlined />
-            <span>DRONE MATCH</span>
+            <span>Drone Match</span>
           </div>
           <div>
-            <p className="overline">无人机足球 · 赛事协作平台</p>
             <h1>
-              让每一次飞行
+              无人机足球
               <br />
-              都有赛场。
+              赛事管理中心
             </h1>
             <p>
-              连接俱乐部与飞手，从报名到出发，
+              发布赛事、审核队伍报名，
               <br />
-              一起把热爱带上赛场。
+              集中管理机构的参赛信息。
             </p>
           </div>
-          <span className="login-foot">赛事组织 / 俱乐部协作 / 飞手成长</span>
+          <span className="login-foot">Drone Match 赛事平台</span>
         </section>
         <section className="login-form">
           <Tag color="green">本地开发环境</Tag>
@@ -388,8 +387,8 @@ function App() {
       : []),
   ];
   const headings: Record<string, string> = {
-    overview: organizer ? "让赛事，有序发生。" : "下一场，一起出发。",
-    events: organizer ? "赛事管理" : "发现你的下一场比赛",
+    overview: "工作台",
+    events: organizer ? "赛事管理" : "赛事广场",
     registrations: organizer ? "报名审核" : "我的报名",
     teams: "我的队伍",
   };
@@ -399,7 +398,7 @@ function App() {
         <div className="brand">
           <ThunderboltOutlined />
           <span>
-            DRONE MATCH<small>无人机足球赛事平台</small>
+            Drone Match<small>无人机足球赛事平台</small>
           </span>
         </div>
         <div className="workspace-label">{account.organizationName}</div>
@@ -464,14 +463,11 @@ function App() {
         <div className="page">
           <div className="page-heading">
             <div>
-              <p className="overline">
-                {organizer ? "赛事运营中心" : "俱乐部工作空间"}
-              </p>
               <h1>{headings[tab]}</h1>
               <p className="muted">
                 {organizer
-                  ? "把时间留给赛场，报名与协作交给这里。"
-                  : "找到合适的赛事，管理队伍与每一次报名。"}
+                  ? `${account.organizationName} · ${pending.length} 条报名待处理`
+                  : `${account.organizationName} · 管理队伍与参赛报名`}
               </p>
             </div>
             <Button
@@ -499,9 +495,11 @@ function App() {
                   {[
                     {
                       label: organizer ? "正在报名的赛事" : "可报名赛事",
-                      value: events.filter((e) => e.status === "open").length,
+                      value: events.filter(
+                        (e) => e.status === "open" && e.approved < e.capacity,
+                      ).length,
                       icon: <TrophyOutlined />,
-                      hint: "等待飞手们的加入",
+                      hint: "报名通道开放中的赛事",
                     },
                     {
                       label: "待审核报名",
@@ -525,34 +523,18 @@ function App() {
                         {s.label}
                         {s.icon}
                       </div>
-                      <strong>{s.value.toString().padStart(2, "0")}</strong>
+                      <strong>{s.value}</strong>
                       <small>{s.hint}</small>
                     </div>
-                  ))}
-                </div>
-                <div className="section-heading">
-                  <h2>{organizer ? "近期赛事" : "推荐赛事"}</h2>
-                  <Button type="text" onClick={() => setTab("events")}>
-                    查看全部 <ArrowRightOutlined />
-                  </Button>
-                </div>
-                <div className="event-grid">
-                  {events.slice(0, 2).map((e, i) => (
-                    <EventCard
-                      key={e.id}
-                      event={e}
-                      index={i}
-                      onClick={() => openDetail(e)}
-                    />
                   ))}
                 </div>
                 <section className="table-panel">
                   <div className="section-heading">
                     <div>
-                      <h2>{organizer ? "等待你的审核" : "最近的报名"}</h2>
+                      <h2>{organizer ? "待审核报名" : "最近报名"}</h2>
                       <p className="muted">
                         {organizer
-                          ? "确认队伍名单，让准备就绪的队伍出发。"
+                          ? "核对队伍、设备级别与飞手名单后处理。"
                           : "报名状态与主办方审核结果保持同步。"}
                       </p>
                     </div>
@@ -572,6 +554,7 @@ function App() {
                     locale={{
                       emptyText: (
                         <Empty
+                          image={Empty.PRESENTED_IMAGE_SIMPLE}
                           description={
                             organizer
                               ? "当前没有待审核报名"
@@ -582,6 +565,21 @@ function App() {
                     }}
                   />
                 </section>
+                <div className="section-heading">
+                  <h2>{organizer ? "近期赛事" : "近期赛事"}</h2>
+                  <Button type="text" onClick={() => setTab("events")}>
+                    查看全部 <ArrowRightOutlined />
+                  </Button>
+                </div>
+                <div className="event-grid">
+                  {events.slice(0, 2).map((e) => (
+                    <EventCard
+                      key={e.id}
+                      event={e}
+                      onClick={() => openDetail(e)}
+                    />
+                  ))}
+                </div>
               </>
             )}
             {tab === "events" && (
@@ -600,11 +598,10 @@ function App() {
                   </span>
                 </div>
                 <div className="event-grid">
-                  {visibleEvents.map((e, i) => (
+                  {visibleEvents.map((e) => (
                     <EventCard
                       key={e.id}
                       event={e}
-                      index={i}
                       onClick={() => openDetail(e)}
                     />
                   ))}
@@ -674,7 +671,7 @@ function App() {
             )}
           </Spin>
           <footer className="page-footer">
-            DRONE MATCH <span>连接每一份飞行的热爱</span>
+            Drone Match <span>本地开发环境 · 仅使用演示资料</span>
           </footer>
         </div>
       </main>
@@ -984,22 +981,18 @@ function App() {
 }
 function EventCard({
   event: e,
-  index,
   onClick,
 }: {
   event: Tournament;
-  index: number;
   onClick: () => void;
 }) {
+  const starts = new Date(e.startsAt);
   return (
     <button className="event-card" onClick={onClick}>
-      <div className={`event-poster poster-${index % 3}`}>
-        <span>{e.category} / DRONE SOCCER</span>
-        <TrophyOutlined />
-        <strong>
-          {e.city}
-          <small>城市飞行赛事</small>
-        </strong>
+      <div className="event-date">
+        <span>{starts.getMonth() + 1}月</span>
+        <strong>{starts.getDate()}</strong>
+        <small>{e.category}</small>
       </div>
       <div className="event-content">
         <div>
@@ -1016,19 +1009,17 @@ function EventCard({
                 ? "名额已满"
                 : "报名中"}
           </Tag>
-          <span className="muted">{date(e.startsAt).split(" ")[0]}</span>
+          <span className="muted">
+            {e.approved}/{e.capacity} 队已通过
+          </span>
         </div>
         <h3>{e.title}</h3>
         <p>
-          <EnvironmentOutlined /> {e.venue}
+          <EnvironmentOutlined /> {e.city}　{e.venue}
         </p>
         <div className="event-bottom">
-          <span>
-            {e.approved} / {e.capacity} 队已通过
-          </span>
-          <span>
-            查看赛事 <ArrowRightOutlined />
-          </span>
+          <span>{date(e.startsAt)}</span>
+          <span>查看详情</span>
         </div>
       </div>
     </button>
@@ -1040,12 +1031,12 @@ createRoot(document.getElementById("root")!).render(
       locale={zhCN}
       theme={{
         token: {
-          colorPrimary: "#16704b",
+          colorPrimary: "#008a46",
           borderRadius: 8,
           fontFamily:
             '-apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif',
-          colorText: "#23372f",
-          colorTextSecondary: "#68766f",
+          colorText: "#18221d",
+          colorTextSecondary: "#66716b",
           controlHeight: 40,
         },
         components: {

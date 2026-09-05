@@ -4,46 +4,64 @@ struct TournamentDetail: View {
     @EnvironmentObject private var store: AppStore
     let initial: Tournament
     @State private var showRegistration = false
+    @State private var showEntries = false
     @State private var selectedSection = "赛事介绍"
     private var event: Tournament { store.tournaments.first { $0.id == initial.id } ?? initial }
     private var ownEntry: Registration? { store.registrations.first { $0.tournamentId == event.id } }
     var body: some View {
         ScrollView {
-            VStack(alignment:.leading,spacing:24) {
-                VStack(alignment:.leading,spacing:20) {
-                    HStack { Text("\(event.category) 级 · 成人演示组").font(.caption); Spacer(); Text(event.canRegister ? "报名中" : "报名结束").font(.caption.weight(.bold)) }
-                    Text(event.title).font(.title.weight(.bold)).fixedSize(horizontal:false,vertical:true)
-                    Label(event.dateLabel,systemImage:"calendar").font(.subheadline)
-                    Label(event.city + " · " + event.venue,systemImage:"mappin.and.ellipse").font(.subheadline)
-                }.padding(24).frame(maxWidth:.infinity,alignment:.leading).foregroundStyle(.white).background(Theme.hero,in:RoundedRectangle(cornerRadius:20))
-                HStack { fact("报名费用",value:"免费"); Spacer(); fact("参赛名额",value:"\(event.approved)/\(event.capacity) 队"); Spacer(); fact("设备级别",value:event.category) }.padding(20).background(Theme.surface,in:RoundedRectangle(cornerRadius:16))
-                Picker("详情栏目",selection:$selectedSection) { Text("赛事介绍").tag("赛事介绍"); Text("报名规则").tag("报名规则") }.pickerStyle(.segmented)
-                if selectedSection == "赛事介绍" {
-                    SectionTitle(title:"关于这场比赛")
-                    Text(event.description).font(.body).lineSpacing(7)
-                    Divider()
-                    fact("主办机构",value:event.organizerName)
-                    fact("报名截止",value:Tournament.formatDate(event.deadline))
-                    Label("提交申请不等于获得参赛资格，审核通过后占用正式名额。",systemImage:"info.circle").font(.footnote).foregroundStyle(.secondary)
-                } else {
-                    SectionTitle(title:"报名规则与须知")
-                    Text(event.rules).font(.body).lineSpacing(7)
+            VStack(alignment:.leading,spacing:16) {
+                VStack(alignment:.leading,spacing:0) {
+                    GeometryReader { geo in if let image = Theme.heroImage { Image(uiImage:image).resizable().scaledToFill().frame(width:geo.size.width,height:180).clipped() } }.frame(height:180).background(Theme.hero)
+                    VStack(alignment:.leading,spacing:16) {
+                        HStack { StatusBadge(text:event.canRegister ? "报名中" : event.status == "closed" ? "报名截止" : "名额已满"); Text(event.category + " 级").font(.caption).foregroundStyle(.secondary); Spacer(); Text("成人演示组").font(.caption).foregroundStyle(.secondary) }
+                        Text(event.title).font(.title2.weight(.bold)).fixedSize(horizontal:false,vertical:true)
+                        Label(event.dateLabel,systemImage:"calendar").font(.subheadline)
+                        Label(event.city + "  " + event.venue,systemImage:"mappin.and.ellipse").font(.subheadline).foregroundStyle(.secondary)
+                        Divider()
+                        HStack { fact("报名费用",value:"免费"); Spacer(); fact("已通过队伍",value:"\(event.approved) / \(event.capacity)"); Spacer(); fact("报名截止",value:Tournament.formatDate(event.deadline)) }
+                    }.padding(20)
+                }.background(Theme.surface,in:RoundedRectangle(cornerRadius:16)).clipShape(RoundedRectangle(cornerRadius:16))
+                if let entry = ownEntry {
+                    HStack(alignment:.top,spacing:12) {
+                        Image(systemName:entry.status == "approved" ? "checkmark.seal.fill" : "list.clipboard").font(.title2).foregroundStyle(Theme.green)
+                        VStack(alignment:.leading,spacing:8) { HStack { Text(entry.teamName).font(.headline); Spacer(); StatusBadge(text:entry.statusLabel) }; Text(entry.reviewNote.isEmpty ? "报名已提交，可在报名记录中查看处理进度。" : entry.reviewNote).font(.footnote).foregroundStyle(.secondary) }
+                    }.padding(18).background(Theme.surface,in:RoundedRectangle(cornerRadius:14))
                 }
-                if let entry = ownEntry { VStack(alignment:.leading,spacing:12) { StatusBadge(text:entry.statusLabel); Text("\(entry.teamName)已提交报名").font(.headline); if !entry.reviewNote.isEmpty { Text(entry.reviewNote).font(.subheadline).foregroundStyle(.secondary) } }.padding(20).frame(maxWidth:.infinity,alignment:.leading).background(Theme.surface,in:RoundedRectangle(cornerRadius:16)) }
-            }.padding(20).frame(maxWidth:680)
-        }.frame(maxWidth:.infinity).background(Theme.background).navigationTitle("赛事详情").navigationBarTitleDisplayMode(.inline)
+                VStack(alignment:.leading,spacing:20) {
+                    HStack(spacing:26) {
+                        ForEach(["赛事介绍","报名规则"],id:\.self) { section in
+                            Button { selectedSection = section } label: {
+                                VStack(spacing:12) { Text(section).font(.subheadline.weight(selectedSection == section ? .bold : .regular)); Capsule().fill(selectedSection == section ? Theme.green : .clear).frame(height:3) }.fixedSize(horizontal:true,vertical:false)
+                            }.foregroundStyle(selectedSection == section ? Theme.green : .secondary).buttonStyle(.plain).frame(minHeight:44)
+                        }
+                        Spacer()
+                    }
+                    if selectedSection == "赛事介绍" {
+                        Text(event.description).font(.subheadline).lineSpacing(6)
+                        Divider()
+                        fact("主办机构",value:event.organizerName)
+                        Label("审核通过后获得正式参赛名额。",systemImage:"info.circle").font(.footnote).foregroundStyle(.secondary)
+                    } else { Text(event.rules).font(.subheadline).lineSpacing(6) }
+                }.padding(20).frame(maxWidth:.infinity,alignment:.leading).background(Theme.surface,in:RoundedRectangle(cornerRadius:14))
+            }.padding(16).frame(maxWidth:680)
+        }.frame(maxWidth:.infinity).background(Theme.background).navigationTitle("赛事详情").navigationBarTitleDisplayMode(.inline).toolbar(.hidden,for:.tabBar)
             .safeAreaInset(edge:.bottom) {
-                Button {
-                    if store.account == nil { store.showLogin = true }
-                    else if ownEntry != nil { store.selectedTab = 4 }
-                    else { showRegistration = true }
-                } label: { Text(ownEntry != nil ? "查看我的报名" : store.account == nil ? "登录后报名" : "立即报名").font(.headline).frame(maxWidth:.infinity).padding(.vertical,10) }
-                .buttonStyle(.borderedProminent).disabled(ownEntry == nil && !event.canRegister).padding(.horizontal,20).padding(.vertical,12).background(.regularMaterial)
+                HStack(spacing:24) {
+                    VStack(alignment:.leading,spacing:4) { Text("报名费用").font(.caption).foregroundStyle(.secondary); Text("免费").font(.headline).foregroundStyle(Theme.green) }
+                    Button {
+                        if store.account == nil { store.showLogin = true }
+                        else if ownEntry != nil { showEntries = true }
+                        else { showRegistration = true }
+                    } label: { Text(ownEntry != nil ? "查看我的报名" : !event.canRegister ? "报名已结束" : store.account == nil ? "登录后报名" : "立即报名").font(.headline).frame(maxWidth:.infinity).padding(.vertical,10) }
+                    .buttonStyle(.borderedProminent).disabled(ownEntry == nil && !event.canRegister)
+                }.padding(.horizontal,20).padding(.vertical,12).background(.regularMaterial)
             }
             .sheet(isPresented:$showRegistration) { RegistrationSheet(event:event).environmentObject(store) }
+            .sheet(isPresented:$showEntries) { NavigationStack { RegistrationsView().toolbar { ToolbarItem(placement:.cancellationAction) { Button("完成") { showEntries = false } } } }.environmentObject(store) }
             .refreshable { await store.refresh() }
     }
-    private func fact(_ title:String,value:String)->some View { VStack(alignment:.leading,spacing:8) { Text(title).font(.caption).foregroundStyle(.secondary); Text(value).font(.subheadline.weight(.semibold)) } }
+    private func fact(_ title:String,value:String)->some View { VStack(alignment:.leading,spacing:7) { Text(title).font(.caption).foregroundStyle(.secondary); Text(value).font(.subheadline.weight(.semibold)).fixedSize(horizontal:false,vertical:true) } }
 }
 struct RegistrationSheet: View {
     @EnvironmentObject private var store: AppStore

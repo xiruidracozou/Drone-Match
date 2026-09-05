@@ -4,6 +4,13 @@ struct Tournament: Codable, Identifiable, Hashable {
     let id, title, city, venue, category, startsAt, deadline, description, rules, status, organizerName, organizationId: String
     let capacity, approved: Int
     var canRegister: Bool { status == "open" && approved < capacity }
+    private var date: Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.date(from: startsAt)
+    }
+    var monthLabel: String { date.map { $0.formatted(.dateTime.month(.abbreviated).locale(Locale(identifier:"zh_CN"))) } ?? "待定" }
+    var dayLabel: String { date.map { String(Calendar.current.component(.day, from:$0)) } ?? "—" }
     var dateLabel: String { Self.formatDate(startsAt) }
     static func formatDate(_ value: String) -> String {
         let formatter = ISO8601DateFormatter()
