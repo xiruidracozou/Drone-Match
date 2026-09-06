@@ -42,3 +42,32 @@ CREATE TABLE IF NOT EXISTS audit_log (
   action text NOT NULL, resource_id text NOT NULL, detail jsonb NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS community_posts (
+  id text PRIMARY KEY, author_id text NOT NULL REFERENCES accounts(id),
+  kind text NOT NULL CHECK(kind IN ('recruit','seeking','friendly','volunteer')),
+  title text NOT NULL, city text NOT NULL, category text NOT NULL CHECK(category IN ('20cm','40cm')),
+  level text NOT NULL, availability text NOT NULL, venue text NOT NULL, body text NOT NULL,
+  team_id text REFERENCES teams(id), starts_at timestamptz,
+  status text NOT NULL DEFAULT 'open' CHECK(status IN ('open','matched','closed','cancelled')),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS community_applications (
+  id text PRIMARY KEY, post_id text NOT NULL REFERENCES community_posts(id),
+  applicant_id text NOT NULL REFERENCES accounts(id), team_id text REFERENCES teams(id),
+  message text NOT NULL, status text NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','accepted','rejected','withdrawn')),
+  created_at timestamptz NOT NULL DEFAULT now(), reviewed_at timestamptz,
+  UNIQUE(post_id,applicant_id)
+);
+CREATE TABLE IF NOT EXISTS team_members (
+  team_id text NOT NULL REFERENCES teams(id), account_id text NOT NULL REFERENCES accounts(id),
+  joined_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(team_id,account_id)
+);
+CREATE INDEX IF NOT EXISTS community_posts_kind ON community_posts(kind,created_at);
+CREATE INDEX IF NOT EXISTS community_applications_owner ON community_applications(applicant_id);
+CREATE TABLE IF NOT EXISTS community_messages (
+  id text PRIMARY KEY, application_id text NOT NULL REFERENCES community_applications(id),
+  sender_id text NOT NULL REFERENCES accounts(id), body text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS community_messages_application ON community_messages(application_id,created_at);

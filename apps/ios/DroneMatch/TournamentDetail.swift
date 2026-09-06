@@ -94,7 +94,7 @@ struct TournamentDetail: View {
   }
   private func info(_ label: String, value: String, icon: String) -> some View {
     HStack(alignment: .top, spacing: 14) {
-      Image(systemName: icon).foregroundStyle(Theme.green).frame(width: 22)
+      Image(systemName: icon).foregroundStyle(Theme.accent).frame(width: 22)
       VStack(alignment: .leading, spacing: 6) {
         Text(label).font(.caption).foregroundStyle(.secondary)
         Text(value).font(.subheadline)

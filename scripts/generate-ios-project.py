@@ -17,9 +17,11 @@ for file in files:
     add('build:'+file.name, f'isa = PBXBuildFile; fileRef = {uid("file:"+file.name)};')
 add('sources', 'isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (' + ','.join(uid('build:'+f.name) for f in files) + '); runOnlyForDeploymentPostprocessing = 0;')
 add('frameworks','isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0;')
-add('resources','isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0;')
+add('media', 'isa = PBXFileReference; lastKnownFileType = folder; path = Media; sourceTree = \"<group>\";')
+add('mediaBuild', f'isa = PBXBuildFile; fileRef = {uid("media")};')
+add('resources', f'isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = ({uid("mediaBuild")}); runOnlyForDeploymentPostprocessing = 0;')
 add('app','isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DroneMatch.app; sourceTree = BUILT_PRODUCTS_DIR;')
-add('sourceGroup', 'isa = PBXGroup; children = (' + ','.join(uid('file:'+f.name) for f in files) + '); path = DroneMatch; sourceTree = "<group>";')
+add('sourceGroup', 'isa = PBXGroup; children = (' + ','.join([uid('file:'+f.name) for f in files]+[uid('media')]) + '); path = DroneMatch; sourceTree = "<group>";')
 add('products',f'isa = PBXGroup; children = ({uid("app")}); name = Products; sourceTree = "<group>";')
 add('root',f'isa = PBXGroup; children = ({uid("sourceGroup")},{uid("products")}); sourceTree = "<group>";')
 for config in ['Debug','Release']:

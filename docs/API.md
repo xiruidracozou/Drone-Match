@@ -98,3 +98,26 @@
 `PUT /teams/:id`：请求体与 `POST /teams` 相同，完整替换队名、城市、设备级别与名单（包含 `adultOnly: true`）。仅队长可编辑自己拥有的队伍；不存在或不属于自己的队伍返回 404，非队长返回 403，未登录返回 401，非法或重复名单返回 400。响应为更新后的 `id,name,city,category,roster`。
 
 编辑仅影响后续报名。已提交报名保留提交时的队名、级别及人员名单，不随队伍编辑改变。本接口不提供删除队伍、真实成员身份或报名名单变更能力。
+
+## 社区 API（第三轮开发中）
+
+前缀 `/community`。以下均为数据库实现；尚待完整 iOS 操作验收。
+
+| 方法/路径 | 用途与权限 |
+|---|---|
+| GET /posts | 公开列表，支持 kind/q/city，最近 100 条 |
+| GET /posts/:id | 公开详情，包括活动状态，不公开申请留言 |
+| POST /posts | 登录用户发布；recruit/friendly 必须拥有匹配级别的队伍；friendly/volunteer 须有未来时间和场地 |
+| PATCH /posts/:id | 仅发布人关闭 closed 或取消 cancelled |
+| POST /posts/:id/applications | 登录用户申请，禁止自我申请；friendly 必须选本人队伍；重复申请返回同一记录 |
+| GET /applications | 仅返回本人发出或本人发布信息收到的申请 |
+| PATCH /applications/:id | 发布人接受/拒绝，申请人撤回；只处理 pending；约赛行锁保证仅一队获接受 |
+| GET /applications/:id/messages | 仅申请双方查看持续留言 |
+| POST /applications/:id/messages | 仅申请双方发送 1–1000 字留言 |
+| GET /memberships | 本人通过招募加入的社区队伍，不等同于比赛报名名单 |
+| GET /teams | 公开名称、城市、级别、所属机构、人数，不公开人员名单 |
+| GET /organizations | 公开机构名称、城市与队伍数 |
+
+发布请求字段：`kind(recruit/seeking/friendly/volunteer),title,city,category(20cm/40cm),level,availability,venue,body,teamId?,startsAt?`。申请请求：`message,teamId?`。处理请求：`status(accepted/rejected/withdrawn)`。留言请求：`body`。
+
+表 `community_posts/community_applications/team_members/community_messages` 为新增表；执行 `npm run db:setup` 幂等建表，不删除现有数据。接受招募产生账号与队伍的社区成员关系，不更改飞手报名名单。接受约赛后标记 matched，其他 pending 申请变为 rejected；取消状态可由双方查询。接受/拒绝/撤回记入审核审计。

@@ -66,9 +66,9 @@ struct EventsView: View {
                 VStack(spacing: 9) {
                   Text(value == "全部" ? "全部赛事" : value + " 级").font(
                     .subheadline.weight(category == value ? .semibold : .regular))
-                  Capsule().fill(category == value ? Theme.green : .clear).frame(height: 3)
+                  Capsule().fill(category == value ? Theme.accent : .clear).frame(height: 3)
                 }.padding(.top, 16)
-              }.foregroundStyle(category == value ? Theme.green : .secondary)
+              }.foregroundStyle(category == value ? Theme.accent : .secondary)
                 .accessibilityAddTraits(category == value ? .isSelected : [])
             }
             Spacer(minLength: 0)
@@ -83,7 +83,7 @@ struct EventsView: View {
             } label: {
               Label("只看可报名", systemImage: openOnly ? "checkmark.circle.fill" : "circle")
                 .font(.caption).frame(minHeight: 44)
-            }.foregroundStyle(openOnly ? Theme.green : .secondary)
+            }.foregroundStyle(openOnly ? Theme.accent : .secondary)
               .accessibilityValue(openOnly ? "已开启" : "已关闭")
           }.padding(.vertical, 6)
           SyncNotice()
@@ -144,7 +144,7 @@ struct ParticipationGuide: View {
   }
   private func step(_ number: String, _ title: String, _ text: String) -> some View {
     HStack(alignment: .top, spacing: 14) {
-      Text(number).font(.headline).foregroundStyle(Theme.green).frame(width: 24)
+      Text(number).font(.headline).foregroundStyle(Theme.accent).frame(width: 24)
       VStack(alignment: .leading, spacing: 8) {
         Text(title).font(.headline)
         Text(text).font(.subheadline).foregroundStyle(.secondary).lineSpacing(3)

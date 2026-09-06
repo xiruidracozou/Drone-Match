@@ -4,19 +4,21 @@ import SwiftUI
 struct DroneMatchApp: App {
   @StateObject private var store = AppStore()
   var body: some Scene {
-    WindowGroup { RootView().environmentObject(store).tint(Theme.green) }
+    WindowGroup { RootView().environmentObject(store).tint(Theme.accent) }
   }
 }
 
 enum Theme {
-  static let green = Color(
+  static let accent = Color(
     uiColor: UIColor { traits in
       traits.userInterfaceStyle == .dark
-        ? UIColor(red: 0.35, green: 0.86, blue: 0.56, alpha: 1)
-        : UIColor(red: 0, green: 0.46, blue: 0.25, alpha: 1)
+        ? UIColor(red: 0.48, green: 0.67, blue: 1, alpha: 1)
+        : UIColor(red: 0.14, green: 0.36, blue: 0.96, alpha: 1)
     })
   static let background = Color(uiColor: .systemGroupedBackground)
   static let surface = Color(uiColor: .secondarySystemGroupedBackground)
+  static let navy = Color(red: 0.063, green: 0.165, blue: 0.337)
+  static let ice = Color(red: 0.918, green: 0.945, blue: 1)
   static let page = Color(uiColor: .systemBackground)
 }
 
@@ -25,6 +27,7 @@ struct RootView: View {
   @Environment(\.scenePhase) private var phase
   var body: some View {
     TabView(selection: $store.selectedTab) {
+      DiscoveryView().tabItem { Label("首页", systemImage: "house") }.tag(3)
       EventsView().tabItem { Label("赛事", systemImage: "trophy") }.tag(0)
       NavigationStack { TeamsView() }
         .tabItem { Label("队伍", systemImage: "person.2") }.tag(1)
@@ -58,7 +61,7 @@ struct SyncNotice: View {
         }.font(.subheadline).frame(minHeight: 44).disabled(store.isLoading)
       }
       .frame(maxWidth: .infinity, alignment: .leading)
-      .padding(14).background(Theme.green.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+      .padding(14).background(Theme.accent.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
     }
   }
 }
@@ -70,7 +73,7 @@ struct StatusBadge: View {
     case "待审核": return Color(uiColor: .systemOrange)
     case "未通过": return Color(uiColor: .systemRed)
     case "报名截止", "名额已满": return .secondary
-    default: return Theme.green
+    default: return Theme.accent
     }
   }
   var body: some View {
@@ -87,9 +90,9 @@ struct ClubAvatar: View {
   var body: some View {
     Text(String(name.prefix(1)))
       .font(.system(size: size * 0.4, weight: .bold))
-      .foregroundStyle(Theme.green)
+      .foregroundStyle(Theme.accent)
       .frame(width: size, height: size)
-      .background(Theme.green.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+      .background(Theme.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
       .accessibilityHidden(true)
   }
 }

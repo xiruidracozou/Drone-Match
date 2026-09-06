@@ -1,4 +1,5 @@
 import "reflect-metadata";
+import { CommunityController } from "./community";
 import {
   Body,
   Controller,
@@ -226,7 +227,7 @@ export async function createApplication(pool: Pool, demoMode = false) {
   if (demoMode && process.env.NODE_ENV === "production")
     throw new Error("Demo authentication is forbidden in production");
   @Module({
-    controllers: [ApiController],
+    controllers: [ApiController, CommunityController],
     providers: [
       Auth,
       Registrations,

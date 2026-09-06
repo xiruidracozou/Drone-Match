@@ -21,6 +21,11 @@ struct ProfileView: View {
         if store.account != nil {
           Section {
             NavigationLink {
+              CommunityInbox()
+            } label: {
+              Label("申请与消息", systemImage: "tray").padding(.vertical, 6)
+            }
+            NavigationLink {
               RegistrationsView()
             } label: {
               HStack {

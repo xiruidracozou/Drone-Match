@@ -10,7 +10,7 @@ final class AppStore: ObservableObject {
   @Published var isLoading = false
   @Published var error: String?
   @Published var lastUpdated: Date?
-  @Published var selectedTab = 0
+  @Published var selectedTab = 3
   @Published var showLogin = false
   private let api = APIClient()
   private var token = SessionStorage.read()
@@ -110,6 +110,22 @@ final class AppStore: ObservableObject {
     }
     await refresh()
     return result
+  }
+  func communityRequest<T: Decodable>(_ path: String, method: String = "GET", body: Data? = nil)
+    async throws -> T
+  {
+    let version = identityVersion
+    do {
+      let result: T = try await api.request(
+        "community/" + path, token: token, method: method, body: body)
+      guard version == identityVersion else { throw CancellationError() }
+      return result
+    } catch {
+      if version == identityVersion, let failure = error as? APIError, failure.status == 401 {
+        handle(error)
+      }
+      throw error
+    }
   }
   func handle(_ error: Error) {
     if let apiError = error as? APIError, apiError.status == 401 { clearSession() }
