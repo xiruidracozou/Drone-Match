@@ -1,163 +1,264 @@
 import SwiftUI
 
 struct ProfileView: View {
-    @EnvironmentObject private var store: AppStore
-    @State private var logoutPrompt = false
-    @State private var showGuide = false
-    @State private var busy = false
-    var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    HStack(spacing:16) {
-                        ClubAvatar(name:store.account?.name ?? "飞",size:64)
-                        VStack(alignment:.leading,spacing:9) {
-                            Text(store.account?.name ?? "登录无人机足球").font(.title2.weight(.bold))
-                            Text(store.account?.organizationName ?? "管理队伍，报名参加赛事").font(.subheadline).foregroundStyle(.secondary)
-                            if store.account != nil { Text("队长").font(.caption).foregroundStyle(Theme.green) }
-                        }
-                    }.padding(.vertical,16)
-                    if store.account == nil { Button("选择演示账号") { store.showLogin = true }.frame(minHeight:44) }
-                }.listRowBackground(Color.clear).listRowInsets(EdgeInsets(top:0,leading:0,bottom:0,trailing:0))
-                if store.account != nil {
-                    Section("我的参赛") {
-                        NavigationLink { RegistrationsView() } label: { profileRow("我的报名",icon:"list.clipboard",value:"\(store.registrations.count)") }
-                        NavigationLink { TeamsView() } label: { profileRow("我的队伍",icon:"person.2",value:"\(store.teams.count)") }
-                    }
-                }
-                Section("帮助与服务") {
-                    Button { showGuide = true } label: { HStack { profileRow("参赛指南",icon:"book.closed",value:""); Image(systemName:"chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary) } }.foregroundStyle(Theme.ink)
-                    NavigationLink { List { Section("当前版本") { LabeledContent("版本",value:"0.1.0"); LabeledContent("运行环境",value:"本地开发预览") }; Section { Text("当前使用虚构的成年飞手资料，验证队伍报名与主办方审核流程。暂不接收真实身份信息。视频、比赛成绩与真实身份登录尚未接入。").font(.subheadline).foregroundStyle(.secondary) } }.navigationTitle("关于无人机足球").navigationBarTitleDisplayMode(.inline) } label: { profileRow("关于无人机足球",icon:"info.circle",value:"") }
-                }
-                if let error = store.error { Section { ErrorBanner(text:error) { Task { await store.refresh() } }.listRowInsets(EdgeInsets()) } }
-                if store.account != nil { Section { Button(role:.destructive) { logoutPrompt = true } label: { HStack { Text("退出登录"); Spacer(); if busy { ProgressView() } } }.disabled(busy) } }
-                Section { Text("本地开发预览 · 演示资料").font(.caption).foregroundStyle(.secondary).frame(maxWidth:.infinity) }.listRowBackground(Color.clear)
-            }.navigationTitle("我的").refreshable { await store.refresh() }
-                .sheet(isPresented:$showGuide) { ParticipationGuide() }
-                .confirmationDialog("退出当前账号？",isPresented:$logoutPrompt,titleVisibility:.visible) { Button("退出登录",role:.destructive) { Task { busy = true; defer { busy = false }; do { try await store.logout() } catch { store.handle(error) } } } }
-        }
-    }
-    private func profileRow(_ title:String,icon:String,value:String)->some View {
-        HStack(spacing:14) { Image(systemName:icon).font(.system(size:19)).foregroundStyle(Theme.green).frame(width:26); Text(title).font(.body); Spacer(); Text(value).font(.subheadline).foregroundStyle(.secondary) }.padding(.vertical,7)
-    }
-}
-struct RegistrationsView: View {
-    @EnvironmentObject private var store: AppStore
-    var body: some View {
-        List {
-            if store.registrations.isEmpty { ContentUnavailableView("还没有报名记录",systemImage:"trophy",description:Text("选择一场赛事，和队伍一起出发。")) }
-            ForEach(store.registrations) { registration in
-                VStack(alignment:.leading,spacing:12) { HStack { Text(registration.teamName).font(.headline); Spacer(); StatusBadge(text:registration.statusLabel) }; Text(registration.tournamentTitle).font(.subheadline); Text("\(registration.roster.count) 名飞手 · \(registration.category)").font(.caption).foregroundStyle(.secondary); if !registration.reviewNote.isEmpty { Text("审核说明：\(registration.reviewNote)").font(.footnote) } }.padding(.vertical,8)
+  @EnvironmentObject private var store: AppStore
+  @State private var logoutPrompt = false
+  @State private var busy = false
+  var body: some View {
+    NavigationStack {
+      List {
+        Section {
+          HStack(spacing: 16) {
+            ClubAvatar(name: store.account?.name ?? "我", size: 58)
+            VStack(alignment: .leading, spacing: 7) {
+              Text(store.account?.name ?? "登录后管理参赛").font(.title3.weight(.semibold))
+              Text(store.account?.organizationName ?? "创建队伍、报名赛事和查看审核结果")
+                .font(.subheadline).foregroundStyle(.secondary)
             }
-        }.navigationTitle("我的报名").navigationBarTitleDisplayMode(.inline).refreshable { await store.refresh() }.task { await store.refresh() }
-            .toolbar { ToolbarItem(placement:.primaryAction) { Button("刷新报名",systemImage:"arrow.clockwise") { Task { await store.refresh() } }.disabled(store.isLoading) } }
-    }
-}
-struct LoginView: View {
-    @EnvironmentObject private var store: AppStore
-    @Environment(\.dismiss) private var dismiss
-    @State private var accounts: [Account] = []
-    @State private var error: String?
-    @State private var busy = false
-    var body: some View {
-        NavigationStack {
+          }.padding(.vertical, 14)
+          if store.account == nil { Button("登录") { store.showLogin = true }.frame(minHeight: 44) }
+        }
+        if store.account != nil {
+          Section {
+            NavigationLink {
+              RegistrationsView()
+            } label: {
+              HStack {
+                Label("我的报名", systemImage: "list.clipboard")
+                Spacer()
+                Text("\(store.registrations.count)").foregroundStyle(.secondary)
+              }.padding(.vertical, 6)
+            }
+          }
+        }
+        Section {
+          NavigationLink {
+            ParticipationGuide()
+          } label: {
+            Label("参赛指南", systemImage: "book.closed").padding(.vertical, 6)
+          }
+          NavigationLink {
             List {
-                Section { Text("选择一个队长身份，体验队伍报名。主办方请使用 Web 后台。").font(.subheadline).foregroundStyle(.secondary) }
-                if accounts.isEmpty && error == nil { ProgressView().frame(maxWidth:.infinity) }
-                ForEach(accounts) { account in Button { Task { busy = true; defer { busy = false }; do { try await store.login(account.id) } catch { self.error = error.localizedDescription } } } label: { HStack(spacing:16) { ClubAvatar(name:account.organizationName); VStack(alignment:.leading,spacing:6) { Text(account.name).font(.headline); Text(account.organizationName).font(.caption).foregroundStyle(.secondary) }; Spacer(); if busy { ProgressView() } else { Image(systemName:"chevron.right").font(.caption) } }.padding(.vertical,10) }.disabled(busy) }
-                if let error { Section { Text(error).foregroundStyle(.red); Button("重新加载") { Task { await load() } } } }
-                Section { Text("本地演示账号不等同于真实身份登录。所有示例人员均为虚构。").font(.footnote).foregroundStyle(.secondary) }
-            }.navigationTitle("演示账号").navigationBarTitleDisplayMode(.inline).toolbar { ToolbarItem(placement:.cancellationAction) { Button("取消") { dismiss() }.disabled(busy) } }.task { await load() }.interactiveDismissDisabled(busy)
+              Section("当前版本") {
+                LabeledContent("版本", value: "0.1.0")
+                LabeledContent("运行环境", value: "本地开发")
+              }
+              Section {
+                Text("目前仅使用虚构的成年演示资料。可创建及编辑队伍、提交赛事报名、查看审核结果。真实身份和正式比赛服务尚未接入。").font(.subheadline)
+                  .foregroundStyle(.secondary)
+              }
+            }.navigationTitle("关于").navigationBarTitleDisplayMode(.inline)
+          } label: {
+            Label("关于无人机足球", systemImage: "info.circle").padding(.vertical, 6)
+          }
         }
-    }
-    private func load() async { error = nil; do { accounts = try await store.demoAccounts() } catch { self.error = "无法加载演示账号，请确认本地服务已启动。" } }
-}
-struct TeamsView: View {
-    @EnvironmentObject private var store: AppStore
-    @State private var showCreate = false
-    var body: some View {
-        List {
-            if store.teams.isEmpty { ContentUnavailableView("创建你的第一支队伍",systemImage:"person.3",description:Text("添加成年演示飞手，开始体验赛事报名。")) }
-            ForEach(store.teams) { team in Section { HStack { HStack(spacing:12) { ClubAvatar(name:team.name); Text(team.name).font(.headline) }; Spacer(); Text(team.category).font(.caption).foregroundStyle(Theme.green) }; Text(team.city).font(.caption).foregroundStyle(.secondary); ForEach(team.roster,id:\.self) { Text($0).font(.subheadline) } } }
-        }.navigationTitle("我的队伍").navigationBarTitleDisplayMode(.inline).toolbar { ToolbarItem(placement:.primaryAction) { Button("创建队伍",systemImage:"plus") { showCreate = true } } }.sheet(isPresented:$showCreate) { CreateTeamView().environmentObject(store) }.refreshable { await store.refresh() }
-    }
-}
-struct CreateTeamView: View {
-    @EnvironmentObject private var store: AppStore
-    @Environment(\.dismiss) private var dismiss
-    @State private var name = ""
-    @State private var city = ""
-    @State private var category = "20cm"
-    @State private var roster = ""
-    @State private var adultOnly = false
-    @State private var busy = false
-    @State private var error: String?
-    private var names: [String] { roster.split(separator:"\n").map { $0.trimmingCharacters(in:.whitespaces) }.filter { !$0.isEmpty } }
-    private var valid: Bool { name.trimmingCharacters(in:.whitespaces).count >= 2 && city.trimmingCharacters(in:.whitespaces).count >= 2 && !names.isEmpty && names.count <= 10 && Set(names).count == names.count && adultOnly }
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("队伍资料") { TextField("队伍名称（至少 2 字）",text:$name); TextField("城市",text:$city); Picker("设备级别",selection:$category) { Text("20cm 级").tag("20cm"); Text("40cm 级").tag("40cm") } }
-                Section("飞手名单 · 每行一名，1–10 名") { TextField("填写成年演示飞手姓名",text:$roster,axis:.vertical).lineLimit(4...10); Toggle("仅使用虚构的成年演示资料",isOn:$adultOnly) }
-                if let error { Section { Text(error).foregroundStyle(.red) } }
-            }.navigationTitle("创建队伍").navigationBarTitleDisplayMode(.inline).toolbar {
-                ToolbarItem(placement:.cancellationAction) { Button("取消") { dismiss() }.disabled(busy) }
-                ToolbarItem(placement:.confirmationAction) { Button { Task { await save() } } label: { if busy { ProgressView() } else { Text("创建") } }.disabled(!valid || busy) }
-            }.interactiveDismissDisabled(busy)
+        if store.error != nil { Section { SyncNotice() }.listRowInsets(EdgeInsets()) }
+        if store.account != nil {
+          Section {
+            Button(role: .destructive) {
+              logoutPrompt = true
+            } label: {
+              HStack {
+                Text("退出登录")
+                Spacer()
+                if busy { ProgressView() }
+              }
+            }.disabled(busy)
+          }
         }
-    }
-    private func save() async { busy = true; defer { busy = false }; do { try await store.createTeam(CreateTeam(name:name,city:city,category:category,roster:names)); dismiss() } catch { self.error = error.localizedDescription } }
-}
-struct CareerView: View {
-    @EnvironmentObject private var store: AppStore
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment:.leading,spacing:24) {
-                    HStack(spacing:14) { ClubAvatar(name:store.account?.name ?? "飞",size:56); VStack(alignment:.leading,spacing:6) { Text(store.account?.name ?? "我的参赛档案").font(.title3.weight(.bold)); Text(store.account?.organizationName ?? "登录后查看队伍和报名记录").font(.caption).foregroundStyle(.secondary) } }.padding(.top,8)
-                    HStack(spacing:0) {
-                        summary("所属队伍",value:store.account == nil ? "—" : "\(store.teams.count)")
-                        Divider().frame(height:32)
-                        summary("报名记录",value:store.account == nil ? "—" : "\(store.registrations.count)")
-                        Divider().frame(height:32)
-                        summary("审核通过",value:store.account == nil ? "—" : "\(store.registrations.filter { $0.status == "approved" }.count)")
-                    }.padding(.vertical,22).background(Theme.surface,in:RoundedRectangle(cornerRadius:16))
-                    SectionTitle(title:"参赛记录")
-                    if store.account == nil {
-                        ContentUnavailableView { Label("登录后查看参赛记录",systemImage:"person.crop.circle") } description: { Text("队伍、报名与审核结果将汇集在这里。") } actions: { Button("登录") { store.showLogin = true }.buttonStyle(.borderedProminent) }
-                    } else if store.registrations.isEmpty {
-                        ContentUnavailableView { Label("还没有报名记录",systemImage:"trophy") } description: { Text("选择合适的赛事，完成你的首次队伍报名。") } actions: { Button("查看赛事") { store.selectedTab = 1 }.buttonStyle(.borderedProminent) }
-                    } else {
-                        VStack(spacing:0) {
-                            ForEach(store.registrations) { entry in
-                                NavigationLink { RegistrationsView() } label: {
-                                    HStack(alignment:.top,spacing:14) {
-                                        Image(systemName:"flag.checkered").foregroundStyle(Theme.green).padding(.top,3)
-                                        VStack(alignment:.leading,spacing:8) { Text(entry.tournamentTitle).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.ink).multilineTextAlignment(.leading); Text(entry.teamName + "  ·  " + entry.category).font(.caption).foregroundStyle(.secondary); StatusBadge(text:entry.statusLabel) }
-                                        Spacer(minLength:0); Image(systemName:"chevron.right").font(.caption2).foregroundStyle(.secondary).padding(.top,4)
-                                    }.padding(18)
-                                }.buttonStyle(.plain)
-                                if entry.id != store.registrations.last?.id { Divider().padding(.leading,48) }
-                            }
-                        }.background(Theme.surface,in:RoundedRectangle(cornerRadius:14))
-                    }
-                    Label("比赛成绩尚未接入，报名通过不计入战绩。",systemImage:"info.circle").font(.footnote).foregroundStyle(.secondary)
-                }.padding(20).frame(maxWidth:680)
-            }.frame(maxWidth:.infinity).background(Theme.background).navigationTitle("生涯").refreshable { await store.refresh() }
+        Section {
+          Text("开发环境 · 仅使用演示资料").font(.caption).foregroundStyle(.secondary).frame(
+            maxWidth: .infinity)
+        }.listRowBackground(Color.clear)
+      }
+      .navigationTitle("我的").refreshable { await store.refresh() }
+      .confirmationDialog("退出当前账号？", isPresented: $logoutPrompt, titleVisibility: .visible) {
+        Button("退出登录", role: .destructive) {
+          Task {
+            busy = true
+            defer { busy = false }
+            do { try await store.logout() } catch { store.handle(error) }
+          }
         }
+      }
     }
-    private func summary(_ title:String,value:String)->some View { VStack(spacing:8) { Text(value).font(.title.weight(.bold)).monospacedDigit(); Text(title).font(.caption).foregroundStyle(.secondary) }.frame(maxWidth:.infinity) }
+  }
 }
-struct VideoView: View {
-    @EnvironmentObject private var store: AppStore
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment:.leading,spacing:24) {
-                    VStack(alignment:.leading,spacing:12) { Image(systemName:"play.rectangle").font(.system(size:32)).foregroundStyle(Theme.green); Text("赛事视频").font(.title2.weight(.bold)); Text("集中观看比赛直播与赛后回放。").font(.subheadline).foregroundStyle(.secondary) }.padding(24).frame(maxWidth:.infinity,alignment:.leading).background(Theme.surface,in:RoundedRectangle(cornerRadius:16))
-                    ContentUnavailableView { Label("视频服务尚未开放",systemImage:"video.slash") } description: { Text("当前版本可查看赛事、创建队伍并提交报名。直播和回放将在接入视频服务后开放。") } actions: { Button("查看赛事") { store.selectedTab = 1 }.buttonStyle(.borderedProminent) }
-                }.padding(20).frame(maxWidth:680)
-            }.frame(maxWidth:.infinity).background(Theme.background).navigationTitle("视频")
+
+struct RegistrationsView: View {
+  @EnvironmentObject private var store: AppStore
+  @State private var status = "全部"
+  private var filtered: [Registration] {
+    store.registrations.filter { status == "全部" || $0.statusLabel == status }
+  }
+  var body: some View {
+    List {
+      if store.error != nil { Section { SyncNotice() } }
+      if store.account == nil {
+        Section {
+          Text("登录后查看报名记录")
+          Button("登录") { store.showLogin = true }
         }
+      } else {
+        Section {
+          Picker("报名状态", selection: $status) {
+            ForEach(["全部", "待审核", "已通过", "未通过"], id: \.self) { Text($0).tag($0) }
+          }
+        }
+        if store.isLoading && store.registrations.isEmpty {
+          ProgressView("正在加载报名")
+        } else if filtered.isEmpty && store.error == nil {
+          ContentUnavailableView {
+            Label("暂无\(status == "全部" ? "" : status)报名", systemImage: "list.clipboard")
+          } description: {
+            Text(status == "全部" ? "选择赛事后，以队伍身份提交报名。" : "可以切换状态查看其他报名。")
+          } actions: {
+            if status != "全部" {
+              Button("查看全部报名") { status = "全部" }
+            } else {
+              Button("查看赛事") { store.selectedTab = 0 }
+            }
+          }
+        }
+        ForEach(filtered) { entry in
+          NavigationLink {
+            RegistrationDetail(initial: entry)
+          } label: {
+            RegistrationRow(entry: entry)
+          }
+        }
+      }
     }
+    .navigationTitle("我的报名").navigationBarTitleDisplayMode(.inline)
+    .refreshable { await store.refresh() }.task { await store.refresh() }
+    .toolbar {
+      ToolbarItem(placement: .primaryAction) {
+        Button("刷新报名", systemImage: "arrow.clockwise") { Task { await store.refresh() } }.disabled(
+          store.isLoading)
+      }
+    }
+  }
+}
+
+struct RegistrationDetail: View {
+  @EnvironmentObject private var store: AppStore
+  let initial: Registration
+  private var entry: Registration { store.registrations.first { $0.id == initial.id } ?? initial }
+  var body: some View {
+    List {
+      if store.account == nil {
+        Section {
+          Text("登录后查看报名详情")
+          Button("登录") { store.showLogin = true }
+        }
+      } else if !store.registrations.contains(where: { $0.id == initial.id }) {
+        ContentUnavailableView(
+          "报名暂不可用", systemImage: "list.clipboard", description: Text("请返回报名列表并刷新。"))
+      } else {
+        if store.error != nil { Section { SyncNotice() } }
+        Section {
+          StatusBadge(text: entry.statusLabel)
+          Text(entry.tournamentTitle).font(.headline)
+          Text(statusDescription).font(.subheadline).foregroundStyle(.secondary)
+        }
+        Section("报名信息") {
+          LabeledContent("参赛队伍", value: entry.teamName)
+          LabeledContent("设备级别", value: entry.category + " 级")
+          LabeledContent("提交时间", value: Tournament.formatDate(entry.createdAt))
+          if !entry.reviewNote.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+              Text("审核说明").font(.caption).foregroundStyle(.secondary)
+              Text(entry.reviewNote).font(.subheadline)
+            }.padding(.vertical, 6)
+          }
+        }
+        Section {
+          ForEach(entry.roster, id: \.self) { Text($0) }
+        } header: {
+          Text("提交时的名单 · \(entry.roster.count) 人")
+        } footer: {
+          Text("此名单为报名时的记录，之后编辑队伍不会改变它。")
+        }
+        Section {
+          NavigationLink {
+            TournamentDestination(id: entry.tournamentId)
+          } label: {
+            Label("查看对应赛事", systemImage: "trophy")
+          }
+        }
+      }
+    }
+    .navigationTitle("报名详情").navigationBarTitleDisplayMode(.inline)
+    .toolbar(.hidden, for: .tabBar)
+    .refreshable { await store.refresh() }
+  }
+  private var statusDescription: String {
+    switch entry.status {
+    case "approved": return "报名审核已通过，赛事时间和场地可在对应赛事中查看。"
+    case "rejected": return "报名未通过，请查看主办方的审核说明。"
+    default: return "报名已提交，等待主办方审核。下拉可刷新审核结果。"
+    }
+  }
+}
+
+struct LoginView: View {
+  @EnvironmentObject private var store: AppStore
+  @Environment(\.dismiss) private var dismiss
+  @State private var accounts: [Account] = []
+  @State private var error: String?
+  @State private var busyID: String?
+  var body: some View {
+    NavigationStack {
+      List {
+        Section {
+          Text("选择本地演示账号").font(.headline)
+          Text("账号代表队伍负责人，人员资料均为虚构。当前不接收真实身份信息。").font(.subheadline).foregroundStyle(.secondary)
+        }
+        if accounts.isEmpty && error == nil { ProgressView("正在加载账号") }
+        ForEach(accounts) { account in
+          Button {
+            Task {
+              busyID = account.id
+              defer { busyID = nil }
+              do {
+                try await store.login(account.id)
+                dismiss()
+              } catch { self.error = error.localizedDescription }
+            }
+          } label: {
+            HStack(spacing: 14) {
+              ClubAvatar(name: account.organizationName)
+              VStack(alignment: .leading, spacing: 6) {
+                Text(account.name).font(.headline).foregroundStyle(.primary)
+                Text(account.organizationName).font(.subheadline).foregroundStyle(.secondary)
+              }
+              Spacer()
+              if busyID == account.id {
+                ProgressView()
+              } else {
+                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
+              }
+            }.padding(.vertical, 8)
+          }.disabled(busyID != nil)
+        }
+        if let error {
+          Section {
+            Text(error).foregroundStyle(.red)
+            Button("重新加载") { Task { await load() } }
+          }
+        }
+      }
+      .navigationTitle("登录").navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("取消") { dismiss() }.disabled(busyID != nil)
+        }
+      }
+      .task { await load() }.interactiveDismissDisabled(busyID != nil)
+    }
+  }
+  private func load() async {
+    error = nil
+    do { accounts = try await store.demoAccounts() } catch { self.error = "无法加载账号，请确认本地服务已启动。" }
+  }
 }

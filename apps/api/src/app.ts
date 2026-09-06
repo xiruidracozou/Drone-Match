@@ -10,6 +10,7 @@ import {
   NotFoundException,
   Param,
   Post,
+  Put,
   Query,
 } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
@@ -93,6 +94,33 @@ class ApiController {
         ],
       )
     ).rows[0];
+  }
+  @Put("teams/:id") async updateTeam(
+    @Param("id") id: string,
+    @Body() body: unknown,
+    @Headers("authorization") header?: string,
+  ) {
+    const actor = await this.auth.actor(header);
+    requireRole(actor, "captain");
+    const value = parse(teamInput, body);
+    const result = await this.db.query(
+      `UPDATE teams SET name=$3,city=$4,category=$5,roster=$6
+       WHERE id=$1 AND owner_id=$2 RETURNING id,name,city,category,roster`,
+      [
+        id,
+        actor.id,
+        value.name,
+        value.city,
+        value.category,
+        JSON.stringify(value.roster),
+      ],
+    );
+    if (!result.rows[0])
+      throw new NotFoundException({
+        code: "NOT_FOUND",
+        message: "队伍不存在或无权修改",
+      });
+    return result.rows[0];
   }
   @Get("admin/tournaments") async managedTournaments(
     @Headers("authorization") header?: string,

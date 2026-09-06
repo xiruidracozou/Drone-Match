@@ -296,3 +296,90 @@ test("禁用开发模式后演示登录入口不可访问，生产模式拒绝�
     else process.env.NODE_ENV = old;
   }
 });
+
+test("队伍资料修改持久化，限制本人操作并保留已提交的报名快照", async () => {
+  const captain = await login("captain-east");
+  const outsider = await login("captain-west");
+  const organizer = await login("organizer-east");
+  const original = {
+    name: "名单快照测试队",
+    city: "上海",
+    category: "20cm",
+    roster: ["飞手甲", "飞手乙"],
+    adultOnly: true,
+  };
+  const team = (
+    await request("/teams", { token: captain, method: "POST", body: original })
+  ).data;
+  const event = await createEvent(organizer, 8);
+  const entry = (
+    await request(`/tournaments/${event.id}/registrations`, {
+      token: captain,
+      method: "POST",
+      body: { teamId: team.id, acceptRules: true },
+    })
+  ).data;
+  const changed = {
+    ...original,
+    name: "更新后的测试队",
+    city: "杭州",
+    roster: ["飞手乙", "飞手丙"],
+  };
+  const path = `/teams/${team.id}`;
+  assert.equal(
+    (await request(path, { token: captain, method: "PUT", body: changed }))
+      .status,
+    200,
+  );
+  const saved = (await request("/teams", { token: captain })).data.find(
+    (t) => t.id === team.id,
+  );
+  assert.equal(saved.name, changed.name);
+  assert.equal(saved.city, changed.city);
+  assert.deepEqual(saved.roster, changed.roster);
+  const historical = (
+    await request("/registrations", { token: captain })
+  ).data.find((r) => r.id === entry.id);
+  assert.deepEqual(historical.roster, original.roster);
+  assert.equal(historical.teamName, original.name);
+  assert.equal(
+    (await request(path, { method: "PUT", body: original })).status,
+    401,
+  );
+  assert.equal(
+    (await request(path, { token: outsider, method: "PUT", body: original }))
+      .status,
+    404,
+  );
+  assert.equal(
+    (await request(path, { token: organizer, method: "PUT", body: original }))
+      .status,
+    403,
+  );
+  assert.equal(
+    (
+      await request(path, {
+        token: captain,
+        method: "PUT",
+        body: { ...changed, roster: ["重复", "重复"] },
+      })
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await request(path, {
+        token: captain,
+        method: "PUT",
+        body: { ...changed, roster: [] },
+      })
+    ).status,
+    400,
+  );
+  assert.deepEqual(
+    (await request("/teams", { token: captain })).data.find(
+      (t) => t.id === team.id,
+    ).roster,
+    changed.roster,
+  );
+});
