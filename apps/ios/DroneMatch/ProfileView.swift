@@ -9,55 +9,58 @@ struct ProfileView: View {
       List {
         Section {
           HStack(spacing: 16) {
-            ClubAvatar(name: store.account?.name ?? "我", size: 58)
-            VStack(alignment: .leading, spacing: 7) {
-              Text(store.account?.name ?? "登录后管理参赛").font(.title3.weight(.semibold))
-              Text(store.account?.organizationName ?? "创建队伍、报名赛事和查看审核结果")
-                .font(.subheadline).foregroundStyle(.secondary)
+            ClubAvatar(name: store.account?.name ?? "我", size: 64)
+            VStack(alignment: .leading, spacing: 8) {
+              Text(store.account?.name ?? "欢迎来到无人机足球").font(TypeScale.title)
+              Text(store.account?.organizationName ?? "发现赛事、加入队伍、一起训练").font(TypeScale.body)
+                .foregroundStyle(.secondary)
             }
-          }.padding(.vertical, 14)
-          if store.account == nil { Button("登录") { store.showLogin = true }.frame(minHeight: 44) }
+          }.padding(.vertical, 16)
+          if store.account == nil {
+            Button("登录") { store.showLogin = true }.frame(minHeight: 44)
+          } else {
+            NavigationLink("编辑个人资料") { AccountEditor() }.font(TypeScale.body)
+          }
         }
-        if store.account != nil {
-          Section {
-            NavigationLink {
-              CommunityInbox()
-            } label: {
-              Label("申请与消息", systemImage: "tray").padding(.vertical, 6)
-            }
-            NavigationLink {
-              RegistrationsView()
-            } label: {
-              HStack {
-                Label("我的报名", systemImage: "list.clipboard")
-                Spacer()
-                Text("\(store.registrations.count)").foregroundStyle(.secondary)
-              }.padding(.vertical, 6)
+        Section("我的参与") {
+          NavigationLink {
+            RegistrationsView()
+          } label: {
+            Label("赛事报名", systemImage: "trophy")
+          }
+          NavigationLink {
+            TeamsView()
+          } label: {
+            Label("我的队伍", systemImage: "person.3")
+          }
+          NavigationLink {
+            CommunityInbox()
+          } label: {
+            HStack {
+              Label("申请与消息", systemImage: "envelope")
+              Spacer()
+              UnreadBadge(count: store.unreadCount)
             }
           }
         }
-        Section {
+        Section("帮助与设置") {
           NavigationLink {
             ParticipationGuide()
           } label: {
-            Label("参赛指南", systemImage: "book.closed").padding(.vertical, 6)
+            Label("参赛指南", systemImage: "book.closed")
           }
           NavigationLink {
-            List {
-              Section("当前版本") {
-                LabeledContent("版本", value: "0.1.0")
-                LabeledContent("运行环境", value: "本地开发")
-              }
-              Section {
-                Text("目前仅使用虚构的成年演示资料。可创建及编辑队伍、提交赛事报名、查看审核结果。真实身份和正式比赛服务尚未接入。").font(.subheadline)
-                  .foregroundStyle(.secondary)
-              }
-            }.navigationTitle("关于").navigationBarTitleDisplayMode(.inline)
+            FeedbackView()
           } label: {
-            Label("关于无人机足球", systemImage: "info.circle").padding(.vertical, 6)
+            Label("问题反馈", systemImage: "bubble.left.and.text.bubble.right")
+          }
+          NavigationLink {
+            AppSettingsView()
+          } label: {
+            Label("设置与关于", systemImage: "gearshape")
           }
         }
-        if store.error != nil { Section { SyncNotice() }.listRowInsets(EdgeInsets()) }
+        if store.error != nil { Section { SyncNotice() } }
         if store.account != nil {
           Section {
             Button(role: .destructive) {
@@ -71,12 +74,9 @@ struct ProfileView: View {
             }.disabled(busy)
           }
         }
-        Section {
-          Text("开发环境 · 仅使用演示资料").font(.caption).foregroundStyle(.secondary).frame(
-            maxWidth: .infinity)
-        }.listRowBackground(Color.clear)
+      }.listRowSpacing(4).navigationTitle("我的").navigationBarTitleDisplayMode(.inline).refreshable {
+        await store.refresh()
       }
-      .navigationTitle("我的").refreshable { await store.refresh() }
       .confirmationDialog("退出当前账号？", isPresented: $logoutPrompt, titleVisibility: .visible) {
         Button("退出登录", role: .destructive) {
           Task {
@@ -134,7 +134,8 @@ struct RegistrationsView: View {
         }
       }
     }
-    .navigationTitle("我的报名").navigationBarTitleDisplayMode(.inline)
+    .navigationTitle(store.account?.role == "organizer" ? "赛事报名记录" : "我的报名")
+    .navigationBarTitleDisplayMode(.inline)
     .refreshable { await store.refresh() }.task { await store.refresh() }
     .toolbar {
       ToolbarItem(placement: .primaryAction) {
@@ -217,7 +218,8 @@ struct LoginView: View {
       List {
         Section {
           Text("选择本地演示账号").font(.headline)
-          Text("账号代表队伍负责人，人员资料均为虚构。当前不接收真实身份信息。").font(.subheadline).foregroundStyle(.secondary)
+          Text("用于本地体验队伍负责人和赛事主办方操作，人员资料均为虚构。当前不接收真实身份信息。").font(.subheadline).foregroundStyle(
+            .secondary)
         }
         if accounts.isEmpty && error == nil { ProgressView("正在加载账号") }
         ForEach(accounts) { account in
@@ -231,11 +233,13 @@ struct LoginView: View {
               } catch { self.error = error.localizedDescription }
             }
           } label: {
-            HStack(spacing: 14) {
+            HStack(spacing: 16) {
               ClubAvatar(name: account.organizationName)
-              VStack(alignment: .leading, spacing: 6) {
+              VStack(alignment: .leading, spacing: 8) {
                 Text(account.name).font(.headline).foregroundStyle(.primary)
-                Text(account.organizationName).font(.subheadline).foregroundStyle(.secondary)
+                Text(
+                  account.organizationName + " · " + (account.role == "organizer" ? "主办方" : "队伍负责人")
+                ).font(.subheadline).foregroundStyle(.secondary)
               }
               Spacer()
               if busyID == account.id {

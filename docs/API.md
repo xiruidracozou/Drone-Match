@@ -1,8 +1,8 @@
 # 当前开发 API
 
-版本：2026-09-06，第一阶段本地预览。本文描述实际已实现的接口，与产品文档中的目标 API 草案分开维护。
+版本：2026-09-07，本地开发预览。本文描述实际已实现的接口，与产品文档中的目标 API 草案分开维护。
 
-基础地址：`http://127.0.0.1:3001/api/v1`。JSON 请求与响应；日期为 ISO 8601 UTC 字符串。写入校验、身份和数据权限均在服务端执行。当前为小规模开发数据，列表没有实现服务端分页。
+基础地址：`http://127.0.0.1:3001/api/v1`。JSON 请求与响应；日期为 ISO 8601 UTC 字符串。写入校验、身份和数据权限均在服务端执行。社区帖子和公开目录支持服务端条件查询与分页；赛事和个人记录目前为小规模全量列表。
 
 ## 会话与账号
 
@@ -105,11 +105,11 @@
 
 | 方法/路径 | 用途与权限 |
 |---|---|
-| GET /posts | 公开列表，支持 kind/q/city，最近 100 条 |
+| GET /posts | 公开列表，支持条件查询及 limit/offset，详见下文 |
 | GET /posts/:id | 公开详情，包括活动状态，不公开申请留言 |
 | POST /posts | 登录用户发布；recruit/friendly 必须拥有匹配级别的队伍；friendly/volunteer 须有未来时间和场地 |
 | PATCH /posts/:id | 仅发布人关闭 closed 或取消 cancelled |
-| POST /posts/:id/applications | 登录用户申请，禁止自我申请；friendly 必须选本人队伍；重复申请返回同一记录 |
+| POST /posts/:id/applications | 登录用户申请，禁止自我申请；friendly/seeking 必须选本人同级别队伍；重复申请返回同一记录 |
 | GET /applications | 仅返回本人发出或本人发布信息收到的申请 |
 | PATCH /applications/:id | 发布人接受/拒绝，申请人撤回；只处理 pending；约赛行锁保证仅一队获接受 |
 | GET /applications/:id/messages | 仅申请双方查看持续留言 |
@@ -121,3 +121,32 @@
 发布请求字段：`kind(recruit/seeking/friendly/volunteer),title,city,category(20cm/40cm),level,availability,venue,body,teamId?,startsAt?`。申请请求：`message,teamId?`。处理请求：`status(accepted/rejected/withdrawn)`。留言请求：`body`。
 
 表 `community_posts/community_applications/team_members/community_messages` 为新增表；执行 `npm run db:setup` 幂等建表，不删除现有数据。接受招募产生账号与队伍的社区成员关系，不更改飞手报名名单。接受约赛后标记 matched，其他 pending 申请变为 rejected；取消状态可由双方查询。接受/拒绝/撤回记入审核审计。
+
+## iOS 移动端修复新增接口
+
+沿用 `/api/v1` 前缀和 Bearer 会话。
+
+- `GET /community/posts`：可传 `kind/q/city/teamId/category/active/mine/limit/offset`。`mine=true` 要求登录；limit 1–100，offset≥0，先按条件过滤再分页。稳定排序 created_at,id 降序。
+- `GET /community/teams?q=&organizationId=&offset=`、`GET /community/organizations?q=&offset=`：每页100条，供客户端分批读取。
+- `GET /community/teams/:id/members`：队伍负责人或成员可读取社区成员显示名称和负责人标记。
+- `DELETE /community/teams/:id/members/:accountId`：负责人移除成员或成员本人退出；不可移除负责人，不更改报名名单。
+- `POST /community/posts/:id/applications`：找队邀请与约赛均须提供自己的同级别 teamId。已撤回的申请可用同一id重提并更新留言；其他状态重复提交不重置。
+- `GET /community/applications`：增加当前账号 `unreadCount`。
+- `POST /community/applications/:id/read`：`{messageIds:string[]}`，最多1000个，只标记该会话实际返回且非自己发送的消息；仅参与者可调用。
+- `PATCH /me`：`{name:string}`，2–40字的显示名称；不替代实名资料。
+- `GET/POST /feedback`：只读本人的反馈；提交`{category:"功能问题"|"使用建议"|"内容举报",body:string}`，8–2000字，状态received。当前无在线客服回复入口。
+- `GET /tournaments/:id/participants`：公开已通过审核的队伍摘要，不含报名人员名单。
+
+生涯可读取当前队伍的比赛安排与主办方录入的总比分，仍无个人实际出场档案。视频回放为官方外部来源，未提供伪造的直播源接口。
+
+
+## 对阵与比分
+
+- `GET /tournaments/:tournamentId/matches`：公开赛程，按开赛时间排序。
+- `POST /tournaments/:tournamentId/matches`：本机构主办方创建对阵。
+- `PUT /tournaments/:tournamentId/matches/:id`：本机构主办方更新，必须带当前 `version`。
+- `GET /me/matches`：当前负责/加入队伍的比赛；主办方查看本机构赛事。不是个人出场记录。
+
+创建/更新字段：`homeRegistrationId,awayRegistrationId,startsAt,endsAt,venue,stage,status,homeScore?,awayScore?,note`。两队须为本赛事已通过的不同报名；结束时间晚于开始；场地2–120字、阶段2–80字、备注最多1000字。`status` 为 `scheduled/final/cancelled`；仅 final 可带双方0–999整数比分且结束时间不能在未来，其他状态比分为 null。响应增加 `id,tournamentId,tournamentTitle,homeName,awayName,version`，队名取报名快照。
+
+事务锁定赛事行，检查同一赛事内非取消比赛的队伍及同名场地时段冲突（相邻时段允许），然后写入比赛及审计；冲突、未通过报名或旧版本返回409，非本机构主办方403。场地目前为文字字段，不能识别别名或跨赛事的同一场馆；没有自动排赛、局制计分、积分榜和个人战绩推导。

@@ -14,6 +14,7 @@ struct DirectoryView: View {
   @State private var organizations: [PublicOrganization] = []
   @State private var query = ""
   @State private var kind = "队伍"
+  @State private var loading = true
   @State private var error: String?
   var body: some View {
     List {
@@ -24,6 +25,19 @@ struct DirectoryView: View {
         }.pickerStyle(.segmented)
       }
       if let error { Section { InlineFailure(message: error) { Task { await load() } } } }
+      if loading { ProgressView("正在加载目录") }
+      if !loading && error == nil {
+        let noTeams = teams.filter {
+          query.isEmpty
+            || ($0.name + $0.city + $0.organizationName).localizedCaseInsensitiveContains(query)
+        }.isEmpty
+        let noOrgs = organizations.filter {
+          query.isEmpty || ($0.name + $0.city).localizedCaseInsensitiveContains(query)
+        }.isEmpty
+        if kind == "队伍" ? noTeams : noOrgs {
+          EmptyPanel(title: "没有匹配的\(kind)", detail: "换一个名称或城市试试。", icon: "magnifyingglass")
+        }
+      }
       if kind == "队伍" {
         ForEach(
           teams.filter {
@@ -34,9 +48,9 @@ struct DirectoryView: View {
           NavigationLink {
             PublicTeamDetail(team: team)
           } label: {
-            HStack(spacing: 14) {
+            HStack(spacing: 16) {
               ClubAvatar(name: team.name)
-              VStack(alignment: .leading, spacing: 7) {
+              VStack(alignment: .leading, spacing: 8) {
                 Text(team.name).font(.headline)
                 Text(team.city + " · " + team.category).font(.subheadline).foregroundStyle(
                   .secondary)
@@ -66,9 +80,11 @@ struct DirectoryView: View {
       .refreshable { await load() }
   }
   private func load() async {
+    loading = true
+    defer { loading = false }
     do {
-      teams = try await store.communityRequest("teams")
-      organizations = try await store.communityRequest("organizations")
+      teams = try await store.communityPages("teams")
+      organizations = try await store.communityPages("organizations")
       error = nil
     } catch { self.error = "目录加载失败，请重试。" }
   }
@@ -84,7 +100,7 @@ struct PublicTeamDetail: View {
         HStack(spacing: 16) {
           ClubAvatar(name: team.name, size: 64)
           VStack(alignment: .leading, spacing: 8) {
-            Text(team.name).font(.title2.bold())
+            Text(team.name).font(TypeScale.title)
             Text(team.city + " · " + team.category + " 级").font(.subheadline).foregroundStyle(
               .secondary)
           }
@@ -96,7 +112,7 @@ struct PublicTeamDetail: View {
           Text("\(team.memberCount) 位社区成员")
         }.font(.caption).foregroundStyle(.secondary)
         Divider()
-        Text("队伍动态").font(.title3.bold())
+        Text("队伍动态").font(TypeScale.heading)
         if let error { InlineFailure(message: error) { Task { await load() } } }
         if posts.isEmpty && error == nil {
           Text("队伍暂未发布招募或训练约赛。").font(.subheadline).foregroundStyle(.secondary)
@@ -114,7 +130,7 @@ struct PublicTeamDetail: View {
   }
   private func load() async {
     do {
-      let all: [CommunityPost] = try await store.communityRequest("posts")
+      let all: [CommunityPost] = try await store.communityPages("posts", query: ["teamId": team.id])
       posts = all.filter { $0.teamId == team.id }
       error = nil
     } catch { self.error = "队伍动态加载失败。" }
@@ -128,7 +144,7 @@ struct OrganizationDetail: View {
   var body: some View {
     List {
       Section {
-        Text(organization.name).font(.title2.bold()).padding(.vertical, 12)
+        Text(organization.name).font(TypeScale.title).padding(.vertical, 12)
         Label(organization.city, systemImage: "mappin.and.ellipse")
       }
       if let error { Section { InlineFailure(message: error) { Task { await load() } } } }
@@ -160,7 +176,8 @@ struct OrganizationDetail: View {
   }
   private func load() async {
     do {
-      let all: [PublicTeam] = try await store.communityRequest("teams")
+      let all: [PublicTeam] = try await store.communityPages(
+        "teams", query: ["organizationId": organization.id])
       teams = all.filter { $0.organizationId == organization.id }
       error = nil
     } catch { self.error = "机构队伍加载失败。" }

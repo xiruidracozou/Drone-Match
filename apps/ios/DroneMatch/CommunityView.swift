@@ -8,6 +8,11 @@ struct CommunityView: View {
   @State private var city = "全国"
   @State private var category = "全部"
   @State private var openOnly = true
+  @State private var hasMore = false
+  @State private var offset = 0
+  private var filterKey: String {
+    selected.rawValue + "|" + query + "|" + city + "|" + category + "|" + String(openOnly)
+  }
   @State private var error: String?
   @State private var loading = false
   @State private var showCompose = false
@@ -22,14 +27,14 @@ struct CommunityView: View {
   }
   var body: some View {
     ScrollView {
-      VStack(alignment: .leading, spacing: 18) {
+      VStack(alignment: .leading, spacing: 16) {
         ScrollView(.horizontal, showsIndicators: false) {
-          HStack(spacing: 22) {
+          HStack(spacing: 24) {
             ForEach(PostKind.allCases) { kind in
               Button {
                 selected = kind
               } label: {
-                VStack(spacing: 10) {
+                VStack(spacing: 12) {
                   Text(kind.title).font(.headline)
                   Capsule().fill(selected == kind ? Theme.accent : .clear).frame(height: 3)
                 }
@@ -41,12 +46,18 @@ struct CommunityView: View {
         HStack {
           Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
           TextField("搜索标题或训练要求", text: $query).submitLabel(.search)
-        }.padding(14).background(Theme.surface, in: RoundedRectangle(cornerRadius: 12))
+        }.padding(16).background(Theme.surface, in: RoundedRectangle(cornerRadius: 12))
         HStack {
           Menu {
             Picker("城市", selection: $city) {
               Text("全国").tag("全国")
-              ForEach(Array(Set(posts.map(\.city))).sorted(), id: \.self) { Text($0).tag($0) }
+              ForEach(
+                Array(
+                  Set(
+                    posts.map(\.city) + store.tournaments.map(\.city) + (city == "全国" ? [] : [city])
+                  )
+                ).sorted(), id: \.self
+              ) { Text($0).tag($0) }
             }
           } label: {
             Label(city, systemImage: "mappin").frame(minHeight: 44)
@@ -81,17 +92,30 @@ struct CommunityView: View {
             CommunityRow(post: post)
           }.buttonStyle(.plain)
         }
+        if hasMore {
+          Button("加载更多") { Task { await load(reset: false) } }.frame(
+            maxWidth: .infinity, minHeight: 44
+          ).disabled(loading)
+        }
       }.padding(20)
     }.background(Theme.background).navigationTitle(selected.title).navigationBarTitleDisplayMode(
       .inline
     )
     .scrollDismissesKeyboard(.interactively)
+    .onChange(of: query) { _, value in
+      if value.count > 80 { query = String(value.prefix(80)) }
+    }
     .toolbar {
       ToolbarItem(placement: .primaryAction) {
         Button("发布", systemImage: "plus") { beginCompose() }
       }
     }
-    .task { await load() }.refreshable { await load() }
+    .task(id: filterKey) {
+      do {
+        if !query.isEmpty { try await Task.sleep(for: .milliseconds(250)) }
+        await load()
+      } catch {}
+    }.refreshable { await load() }
     .sheet(isPresented: $showLogin, onDismiss: { if store.account != nil { showCompose = true } }) {
       LoginView()
     }
@@ -102,23 +126,44 @@ struct CommunityView: View {
   private func beginCompose() {
     if store.account == nil { showLogin = true } else { showCompose = true }
   }
-  private func load() async {
+  private func load(reset: Bool = true) async {
     loading = true
-    defer { loading = false }
+    let key = filterKey
+    let start = reset ? 0 : offset
+    if reset { hasMore = false }
+    defer { if key == filterKey { loading = false } }
     do {
-      posts = try await store.communityRequest("posts")
+      let rows: [CommunityPost] = try await store.communityQuery(
+        "posts",
+        query: [
+          "kind": selected.rawValue, "q": String(query.prefix(80)),
+          "city": city == "全国" ? "" : city, "category": category == "全部" ? "" : category,
+          "active": String(openOnly), "offset": String(start),
+        ])
+      guard !Task.isCancelled, key == filterKey else { return }
+      if reset {
+        posts = rows
+      } else {
+        let ids = Set(posts.map(\.id))
+        posts += rows.filter { !ids.contains($0.id) }
+      }
+      offset = start + rows.count
+      hasMore = rows.count == 100
       error = nil
-    } catch { self.error = "信息加载失败，请检查连接后重试。" }
+    } catch is CancellationError {} catch {
+      if !Task.isCancelled, key == filterKey { self.error = "信息加载失败，请检查连接后重试。" }
+    }
   }
 }
 struct CommunityRow: View {
   let post: CommunityPost
   var body: some View {
-    VStack(alignment: .leading, spacing: 15) {
-      HStack(spacing: 11) {
-        Image(systemName: post.type.icon).font(.title3).foregroundStyle(Theme.accent).frame(
-          width: 42, height: 42
-        ).background(Theme.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+    VStack(alignment: .leading, spacing: 16) {
+      HStack(spacing: 12) {
+        Image(systemName: post.type.icon).font(TypeScale.heading).foregroundStyle(Theme.accent)
+          .frame(
+            width: 42, height: 42
+          ).background(Theme.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
         VStack(alignment: .leading, spacing: 4) {
           Text(post.teamName ?? post.authorName).font(.subheadline.weight(.semibold))
           Text(post.city + " · " + post.type.title).font(.caption).foregroundStyle(.secondary)
@@ -130,8 +175,10 @@ struct CommunityRow: View {
       Text(post.title).font(.headline).fixedSize(horizontal: false, vertical: true)
       Text(post.body).font(.subheadline).foregroundStyle(.secondary).lineLimit(2).lineSpacing(3)
       HStack(spacing: 8) {
-        Text(post.category + " 级")
-        Text("·")
+        if post.type != .volunteer {
+          Text(post.category + " 级")
+          Text("·")
+        }
         Text(post.level)
         Spacer()
         Text(post.availability).lineLimit(1)
@@ -141,8 +188,8 @@ struct CommunityRow: View {
           .caption
         ).foregroundStyle(Theme.accent)
       }
-    }.padding(18).frame(maxWidth: .infinity, alignment: .leading).background(
-      Theme.surface, in: RoundedRectangle(cornerRadius: 18))
+    }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(
+      Theme.surface, in: RoundedRectangle(cornerRadius: 16))
   }
 }
 struct CommunityDetail: View {
@@ -169,7 +216,7 @@ struct CommunityDetail: View {
             Spacer()
             Text(post.isOpen ? "进行中" : post.statusLabel)
           }.font(.subheadline)
-          Text(post.title).font(.title2.weight(.bold))
+          Text(post.title).font(TypeScale.title)
           HStack {
             ClubAvatar(name: post.teamName ?? post.authorName)
             VStack(alignment: .leading, spacing: 5) {
@@ -179,19 +226,21 @@ struct CommunityDetail: View {
           }
         }
         if let error { InlineFailure(message: error) { Task { await load() } } }
-        VStack(spacing: 14) {
+        VStack(spacing: 16) {
           LabeledContent("所在城市", value: post.city)
-          LabeledContent("设备级别", value: post.category)
-          LabeledContent("经验要求", value: post.level)
+          if post.type != .volunteer { LabeledContent("设备级别", value: post.category) }
+          LabeledContent(
+            post.type == .volunteer ? "志愿岗位" : post.type == .seeking ? "我的经验" : "经验要求",
+            value: post.level)
           LabeledContent("可用时间", value: post.availability)
           if !post.venue.isEmpty { LabeledContent("活动场地", value: post.venue) }
           if let time = post.startsAt { LabeledContent("开始时间", value: Tournament.formatDate(time)) }
           if post.type == .friendly { LabeledContent("约赛费用", value: "免费") }
-        }.font(.subheadline).padding(18).background(
+        }.font(.subheadline).padding(16).background(
           Theme.background, in: RoundedRectangle(cornerRadius: 16))
         VStack(alignment: .leading, spacing: 12) {
           Text("详细说明").font(.headline)
-          Text(post.body).font(.body).lineSpacing(5)
+          Text(post.body).font(TypeScale.body).lineSpacing(5)
         }
         if owned {
           Text("收到的申请 · \(applications.count)").font(.headline)
@@ -214,13 +263,16 @@ struct CommunityDetail: View {
                   Button("不接受") { Task { await review(app, "rejected") } }.buttonStyle(.bordered)
                 }.disabled(busy)
               }
-            }.padding(18).background(Theme.background, in: RoundedRectangle(cornerRadius: 14))
+            }.padding(16).background(Theme.background, in: RoundedRectangle(cornerRadius: 12))
           }
         } else if let app = ownApplication {
           VStack(alignment: .leading, spacing: 12) {
             Text("我的申请 · " + app.statusLabel).font(.headline)
             Text(app.message).font(.subheadline)
             NavigationLink("联系发布人") { CommunityConversation(application: app) }
+            if app.status == "accepted" && post.type == .recruit {
+              NavigationLink("打开我的队伍") { TeamsView() }
+            }
             if app.status == "accepted" {
               Text(post.type == .recruit ? "你已加入该队伍的成员列表。比赛报名名单仍由队长维护。" : "对方已接受申请，请在申请中心查看活动安排。")
                 .font(.subheadline).foregroundStyle(.secondary)
@@ -229,7 +281,7 @@ struct CommunityDetail: View {
               Button("撤回申请", role: .destructive) { Task { await review(app, "withdrawn") } }
                 .disabled(busy)
             }
-          }.padding(18).background(Theme.background, in: RoundedRectangle(cornerRadius: 14))
+          }.padding(16).background(Theme.background, in: RoundedRectangle(cornerRadius: 12))
         }
       }.padding(20)
     }.background(Theme.page).navigationTitle(post.type.title).navigationBarTitleDisplayMode(.inline)
@@ -246,9 +298,11 @@ struct CommunityDetail: View {
             }.disabled(post.status == "closed" || post.status == "cancelled" || busy)
           } else {
             Button(
-              ownApplication?.statusLabel ?? (post.isOpen ? post.type.action : post.statusLabel)
+              ownApplication?.status == "withdrawn" && post.isOpen
+                ? "重新申请"
+                : ownApplication?.statusLabel ?? (post.isOpen ? post.type.action : post.statusLabel)
             ) { if store.account == nil { showLogin = true } else { showApply = true } }.disabled(
-              !post.isOpen || ownApplication != nil)
+              !post.isOpen || (ownApplication != nil && ownApplication?.status != "withdrawn"))
           }
         }.font(.headline).frame(maxWidth: .infinity, minHeight: 48).buttonStyle(.borderedProminent)
           .padding(.horizontal, 20).padding(.vertical, 12).background(.bar)
@@ -259,7 +313,11 @@ struct CommunityDetail: View {
           if store.account != nil {
             Task {
               await load()
-              if !owned && ownApplication == nil && post.isOpen { showApply = true }
+              if !owned && (ownApplication == nil || ownApplication?.status == "withdrawn")
+                && post.isOpen
+              {
+                showApply = true
+              }
             }
           }
         }
@@ -298,6 +356,7 @@ struct CommunityDetail: View {
         "applications/\(app.id)", method: "PATCH",
         body: JSONEncoder().encode(StateChange(status: status)))
       await load()
+      await store.refresh()
     } catch { self.error = error.localizedDescription }
   }
   private func close() async {
@@ -309,6 +368,7 @@ struct CommunityDetail: View {
         body: JSONEncoder().encode(
           StateChange(status: post.type == .friendly ? "cancelled" : "closed")))
       await load()
+      await store.refresh()
     } catch { self.error = error.localizedDescription }
   }
 }
@@ -335,9 +395,11 @@ struct CommunityComposer: View {
         Section("基本信息") {
           TextField("标题", text: $title)
           TextField("城市", text: $city)
-          Picker("设备级别", selection: $category) {
-            Text("20cm").tag("20cm")
-            Text("40cm").tag("40cm")
+          if kind != .volunteer {
+            Picker("设备级别", selection: $category) {
+              Text("20cm").tag("20cm")
+              Text("40cm").tag("40cm")
+            }
           }
           if needsTeam {
             Picker("发布队伍", selection: $teamId) {
@@ -348,8 +410,12 @@ struct CommunityComposer: View {
           }
         }
         Section("参与条件") {
-          Picker("经验要求", selection: $level) {
-            ForEach(["不限", "入门", "进阶", "竞技"], id: \.self) { Text($0).tag($0) }
+          if kind == .volunteer {
+            TextField("志愿岗位，如场务、检录", text: $level)
+          } else {
+            Picker(kind == .seeking ? "我的经验" : "经验要求", selection: $level) {
+              ForEach(["不限", "入门", "进阶", "竞技"], id: \.self) { Text($0).tag($0) }
+            }
           }
           TextField("可参与时间，如周六下午", text: $availability)
           TextField("场地或训练区域", text: $venue)
@@ -360,11 +426,16 @@ struct CommunityComposer: View {
           }
         }
         Section("详细说明") {
-          TextField("介绍训练安排、参与要求和准备事项", text: $bodyText, axis: .vertical).lineLimit(5...10)
+          TextField(
+            kind == .volunteer
+              ? "说明岗位职责、集合地点与准备事项" : kind == .seeking ? "介绍自己的经验、希望加入的队伍与训练安排" : "介绍训练安排、参与要求和准备事项",
+            text: $bodyText, axis: .vertical
+          ).lineLimit(5...10)
         }
         if kind == .friendly {
           Section {
-            Text("当前约赛免费。确认一个对手后停止接受其他申请；取消后双方可查看取消状态。").font(.footnote).foregroundStyle(.secondary)
+            Text("当前约赛免费。确认一个对手后停止接受其他申请；取消后双方可查看取消状态。").font(TypeScale.caption).foregroundStyle(
+              .secondary)
           }
         }
         if let error { Section { Text(error).foregroundStyle(.red) } }
@@ -383,6 +454,7 @@ struct CommunityComposer: View {
           TeamEditor(category: category) { team in teamId = team.id }
         }
         .onChange(of: category) { _, _ in teamId = "" }.interactiveDismissDisabled(busy)
+        .onAppear { if kind == .volunteer && level == "不限" { level = "场务协助" } }
     }
   }
   private func publish() async {
@@ -445,8 +517,8 @@ struct CommunityApply: View {
             Button("完成") { dismiss() }
           }
         } else {
-          if post.type == .friendly {
-            Section("应约队伍") {
+          if post.type == .friendly || post.type == .seeking {
+            Section(post.type == .seeking ? "邀请加入的队伍" : "应约队伍") {
               Picker("选择队伍", selection: $teamId) {
                 Text("请选择").tag("")
                 ForEach(store.teams.filter { $0.category == post.category }) {
@@ -486,8 +558,8 @@ struct CommunityApply: View {
       error = "请填写申请留言。"
       return
     }
-    guard post.type != .friendly || !teamId.isEmpty else {
-      error = "请选择应约队伍。"
+    guard (post.type != .friendly && post.type != .seeking) || !teamId.isEmpty else {
+      error = "请选择对应的队伍。"
       return
     }
     busy = true
@@ -498,6 +570,7 @@ struct CommunityApply: View {
         body: JSONEncoder().encode(
           ApplicationDraft(message: message, teamId: teamId.isEmpty ? nil : teamId)))
       saved = true
+      await store.refresh()
     } catch { self.error = error.localizedDescription }
   }
 }
@@ -508,6 +581,7 @@ struct CommunityInbox: View {
   @State private var memberships: [Membership] = []
   @State private var error: String?
   @State private var section = "我发出的"
+  @State private var loading = true
   private var filtered: [CommunityApplication] {
     entries.filter {
       section == "我发出的" ? $0.applicantId == store.account?.id : $0.authorId == store.account?.id
@@ -528,6 +602,7 @@ struct CommunityInbox: View {
           }
         }
         if section == "我的发布" {
+          if posts.isEmpty { Text("还没有发布记录").foregroundStyle(.secondary) }
           ForEach(posts.filter { $0.authorId == store.account?.id }) { post in
             NavigationLink {
               CommunityDetail(initial: post)
@@ -540,16 +615,28 @@ struct CommunityInbox: View {
             }
           }
         } else if section == "加入的队伍" {
+          if memberships.isEmpty {
+            Text("暂未加入队伍，可通过招募申请加入。").font(TypeScale.body).foregroundStyle(.secondary)
+          }
           ForEach(memberships) { item in
-            VStack(alignment: .leading, spacing: 8) {
-              Text(item.teamName).font(.headline)
-              Text(item.city + " · " + item.category).font(.subheadline).foregroundStyle(.secondary)
-              Text("加入于 " + Tournament.formatDate(item.joinedAt)).font(.caption).foregroundStyle(
-                .secondary)
+            NavigationLink {
+              TeamMembersView(teamID: item.teamId, teamName: item.teamName)
+            } label: {
+              VStack(alignment: .leading, spacing: 8) {
+                Text(item.teamName).font(.headline)
+                Text(item.city + " · " + item.category).font(.subheadline).foregroundStyle(
+                  .secondary)
+                Text("加入于 " + Tournament.formatDate(item.joinedAt)).font(.caption).foregroundStyle(
+                  .secondary)
+              }
             }
           }
         } else {
-          if filtered.isEmpty && error == nil { Text("暂无申请记录").foregroundStyle(.secondary) }
+          if loading {
+            ProgressView("正在加载申请")
+          } else if filtered.isEmpty && error == nil {
+            Text("暂无申请记录").foregroundStyle(.secondary)
+          }
           ForEach(filtered) { entry in
             NavigationLink {
               CommunityConversation(application: entry)
@@ -558,6 +645,7 @@ struct CommunityInbox: View {
                 HStack {
                   Text(entry.postTitle).font(.headline)
                   Spacer()
+                  UnreadBadge(count: entry.unreadCount ?? 0)
                   Text(entry.statusLabel).font(.caption).foregroundStyle(Theme.accent)
                 }
                 Text(entry.message).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
@@ -576,13 +664,15 @@ struct CommunityInbox: View {
       posts = []
       memberships = []
       Task { await load() }
-    }.refreshable { await load() }
+    }.onReceive(store.$applications) { entries = $0 }.refreshable { await load() }
   }
   private func load() async {
     guard let owner = store.account?.id else { return }
+    loading = true
+    defer { loading = false }
     do {
       let a: [CommunityApplication] = try await store.communityRequest("applications")
-      let p: [CommunityPost] = try await store.communityRequest("posts")
+      let p: [CommunityPost] = try await store.communityPages("posts", query: ["mine": "true"])
       let m: [Membership] = try await store.communityRequest("memberships")
       guard store.account?.id == owner else { return }
       entries = a

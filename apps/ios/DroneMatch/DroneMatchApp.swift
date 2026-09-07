@@ -15,6 +15,8 @@ enum Theme {
         ? UIColor(red: 0.48, green: 0.67, blue: 1, alpha: 1)
         : UIColor(red: 0.14, green: 0.36, blue: 0.96, alpha: 1)
     })
+  static let solidAccent = Color(red: 0.14, green: 0.36, blue: 0.96)
+  static let onAccent = Color.white
   static let background = Color(uiColor: .systemGroupedBackground)
   static let surface = Color(uiColor: .secondarySystemGroupedBackground)
   static let navy = Color(red: 0.063, green: 0.165, blue: 0.337)
@@ -25,18 +27,26 @@ enum Theme {
 struct RootView: View {
   @EnvironmentObject private var store: AppStore
   @Environment(\.scenePhase) private var phase
+  @AppStorage("appearance") private var appearance = "system"
   var body: some View {
     TabView(selection: $store.selectedTab) {
       DiscoveryView().tabItem { Label("首页", systemImage: "house") }.tag(3)
       EventsView().tabItem { Label("赛事", systemImage: "trophy") }.tag(0)
-      NavigationStack { TeamsView() }
-        .tabItem { Label("队伍", systemImage: "person.2") }.tag(1)
-      ProfileView().tabItem { Label("我的", systemImage: "person.crop.circle") }.tag(2)
+      CareerView().tabItem { Label("生涯", systemImage: "person.crop.rectangle") }.tag(1)
+      VideoLibraryView().tabItem { Label("视频", systemImage: "play.rectangle") }.tag(4)
+      ProfileView().tabItem { Label("我的", systemImage: "person.crop.circle") }.badge(
+        store.unreadCount
+      ).tag(2)
     }
-    .task { await store.refresh() }
-    .onChange(of: phase) { _, value in
-      if value == .active { Task { await store.refresh() } }
+    .preferredColorScheme(appearance == "light" ? .light : appearance == "dark" ? .dark : nil)
+    .task(id: phase) {
+      guard phase == .active else { return }
+      while !Task.isCancelled {
+        await store.refresh()
+        do { try await Task.sleep(for: .seconds(20)) } catch { return }
+      }
     }
+
     .sheet(isPresented: $store.showLogin) { LoginView() }
   }
 }
@@ -61,7 +71,7 @@ struct SyncNotice: View {
         }.font(.subheadline).frame(minHeight: 44).disabled(store.isLoading)
       }
       .frame(maxWidth: .infinity, alignment: .leading)
-      .padding(14).background(Theme.accent.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+      .padding(16).background(Theme.accent.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
     }
   }
 }
@@ -89,10 +99,10 @@ struct ClubAvatar: View {
   var size: CGFloat = 48
   var body: some View {
     Text(String(name.prefix(1)))
-      .font(.system(size: size * 0.4, weight: .bold))
+      .font(.system(size: size * 0.36, weight: .semibold))
       .foregroundStyle(Theme.accent)
       .frame(width: size, height: size)
-      .background(Theme.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+      .background(Theme.accent.opacity(0.08), in: Circle())
       .accessibilityHidden(true)
   }
 }
@@ -100,14 +110,14 @@ struct ClubAvatar: View {
 struct EventRow: View {
   let event: Tournament
   var body: some View {
-    HStack(alignment: .top, spacing: 18) {
+    HStack(alignment: .top, spacing: 16) {
       VStack(spacing: 4) {
-        Text(event.dayLabel).font(.system(size: 28, weight: .semibold, design: .rounded))
+        Text(event.dayLabel).font(TypeScale.title).monospacedDigit()
         Text(event.weekdayLabel).font(.caption).foregroundStyle(.secondary)
       }
       .frame(width: 40).accessibilityElement(children: .ignore)
       .accessibilityLabel(event.dateLabel)
-      VStack(alignment: .leading, spacing: 9) {
+      VStack(alignment: .leading, spacing: 8) {
         Text(event.title).font(.headline).foregroundStyle(.primary)
           .fixedSize(horizontal: false, vertical: true)
         Text(event.city + " · " + event.venue)
@@ -134,7 +144,7 @@ struct EventRow: View {
 struct RegistrationRow: View {
   let entry: Registration
   var body: some View {
-    VStack(alignment: .leading, spacing: 10) {
+    VStack(alignment: .leading, spacing: 12) {
       HStack {
         StatusBadge(text: entry.statusLabel)
         Spacer()

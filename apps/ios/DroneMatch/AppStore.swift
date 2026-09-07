@@ -7,6 +7,9 @@ final class AppStore: ObservableObject {
   @Published var teams: [Team] = []
   @Published var registrations: [Registration] = []
   @Published var account: Account?
+  @Published var myMatches: [ScheduledMatch] = []
+  @Published var memberships: [Membership] = []
+  @Published var applications: [CommunityApplication] = []
   @Published var isLoading = false
   @Published var error: String?
   @Published var lastUpdated: Date?
@@ -33,6 +36,16 @@ final class AppStore: ObservableObject {
         let ownTeams: [Team] = try await api.request("teams", token: currentToken)
         let entries: [Registration] = try await api.request("registrations", token: currentToken)
         guard version == identityVersion && currentRefresh == refreshVersion else { return }
+        let joined: [Membership] = try await api.request(
+          "community/memberships", token: currentToken)
+        let applications: [CommunityApplication] = try await api.request(
+          "community/applications", token: currentToken)
+        guard version == identityVersion && currentRefresh == refreshVersion else { return }
+        let matches: [ScheduledMatch] = try await api.request("me/matches", token: currentToken)
+        guard version == identityVersion && currentRefresh == refreshVersion else { return }
+        myMatches = matches
+        memberships = joined
+        self.applications = applications
         account = me
         teams = ownTeams
         registrations = entries
@@ -46,7 +59,7 @@ final class AppStore: ObservableObject {
   }
   func demoAccounts() async throws -> [Account] {
     let rows: [Account] = try await api.request("dev/accounts")
-    return rows.filter { $0.role == "captain" }
+    return rows
   }
   func login(_ accountID: String) async throws {
     let session: SessionResponse = try await api.request(
@@ -58,6 +71,9 @@ final class AppStore: ObservableObject {
     account = session.account
     teams = []
     registrations = []
+    memberships = []
+    myMatches = []
+    applications = []
     lastUpdated = nil
     error = nil
     await refresh()
@@ -77,6 +93,9 @@ final class AppStore: ObservableObject {
     account = nil
     teams = []
     registrations = []
+    memberships = []
+    myMatches = []
+    applications = []
     lastUpdated = nil
     SessionStorage.clear()
   }
@@ -114,17 +133,42 @@ final class AppStore: ObservableObject {
   func communityRequest<T: Decodable>(_ path: String, method: String = "GET", body: Data? = nil)
     async throws -> T
   {
+    try await request("community/" + path, method: method, body: body)
+  }
+  var unreadCount: Int { applications.reduce(0) { $0 + ($1.unreadCount ?? 0) } }
+  func request<T: Decodable>(_ path: String, method: String = "GET", body: Data? = nil) async throws
+    -> T
+  {
     let version = identityVersion
     do {
-      let result: T = try await api.request(
-        "community/" + path, token: token, method: method, body: body)
+      let value: T = try await api.request(path, token: token, method: method, body: body)
       guard version == identityVersion else { throw CancellationError() }
-      return result
+      return value
     } catch {
-      if version == identityVersion, let failure = error as? APIError, failure.status == 401 {
-        handle(error)
-      }
+      if version == identityVersion, let e = error as? APIError, e.status == 401 { handle(e) }
       throw error
+    }
+  }
+  func communityQuery<T: Decodable>(_ path: String, query: [String: String]) async throws -> T {
+    var components = URLComponents()
+    components.queryItems = query.sorted { $0.key < $1.key }.map {
+      URLQueryItem(name: $0.key, value: $0.value)
+    }
+    return try await communityRequest(path + "?" + (components.percentEncodedQuery ?? ""))
+  }
+  func communityPages<T: Decodable>(_ path: String, query: [String: String] = [:]) async throws
+    -> [T]
+  {
+    var rows: [T] = []
+    var offset = 0
+    while true {
+      try Task.checkCancellation()
+      var params = query
+      params["offset"] = String(offset)
+      let page: [T] = try await communityQuery(path, query: params)
+      rows += page
+      if page.count < 100 { return rows }
+      offset += page.count
     }
   }
   func handle(_ error: Error) {

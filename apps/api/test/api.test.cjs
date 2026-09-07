@@ -663,7 +663,10 @@ test("找队和志愿者发布可申请和撤回，私有申请不会向其他�
       await request(`/community/posts/${post.id}/applications`, {
         token: west,
         method: "POST",
-        body: { message: "仅参与双方可见的留言" },
+        body: {
+          message: "仅参与双方可见的留言",
+          ...(kind === "seeking" ? { teamId: "team-west" } : {}),
+        },
       })
     ).data;
     assert.equal(
@@ -719,7 +722,7 @@ test("申请双方可持续留言，第三方不能读取或发送", async () =>
     await request(`/community/posts/${post.id}/applications`, {
       token: west,
       method: "POST",
-      body: { message: "可以来试训" },
+      body: { message: "可以来试训", teamId: "team-west" },
     })
   ).data;
   const path = `/community/applications/${app.id}/messages`;
@@ -764,10 +767,440 @@ test("公开目录可查询队伍和机构，不公开队员名单和账号会�
   const teams = await request("/community/teams?q=青空");
   assert.equal(teams.status, 200);
   assert.ok(teams.data.length >= 1);
-  assert.ok(teams.data.every((t) => t.name.includes("青空")));
+  assert.ok(
+    teams.data.every((t) =>
+      (t.name + t.city + t.organizationName).includes("青空"),
+    ),
+  );
   assert.equal("roster" in teams.data[0], false);
   assert.equal("token" in teams.data[0], false);
+  await pool.query(
+    "INSERT INTO teams(id,organization_id,owner_id,name,city,category,roster) VALUES('directory-org-match','org-east','captain-east','机构关联测试队','南京','20cm','[]')",
+  );
+  const byOrganization = await request("/community/teams?q=青空");
+  assert.ok(byOrganization.data.some((t) => t.id === "directory-org-match"));
+  assert.ok(
+    byOrganization.data.every((t) => !("roster" in t) && !("token" in t)),
+  );
   const orgs = await request("/community/organizations");
   assert.equal(orgs.status, 200);
   assert.ok(orgs.data.some((o) => o.id === "org-east"));
+});
+
+test("社区按发布人和队伍查询并分页，旧记录不会被首页100条截断", async () => {
+  const east = await login("captain-east");
+  await pool.query(`INSERT INTO community_posts(id,author_id,kind,title,city,category,level,availability,venue,body,team_id,created_at)
+    SELECT 'page-'||n,'captain-west','recruit','分页新记录'||n,'杭州','20cm','入门','周末','场馆','分页检索验证记录','team-west',now()+n*interval '1 second' FROM generate_series(1,105) n`);
+  const mine = await request("/community/posts?mine=true", { token: east });
+  assert.ok(mine.data.length > 0);
+  assert.ok(mine.data.every((p) => p.authorId === "captain-east"));
+  assert.equal((await request("/community/posts?mine=true")).status, 401);
+  const scoped = await request("/community/posts?teamId=team-east");
+  assert.ok(scoped.data.length > 0);
+  assert.ok(scoped.data.every((p) => p.teamId === "team-east"));
+  const p1 = (
+    await request("/community/posts?kind=recruit&city=杭州&limit=50&offset=0")
+  ).data;
+  const p2 = (
+    await request("/community/posts?kind=recruit&city=杭州&limit=50&offset=50")
+  ).data;
+  assert.equal(p1.length, 50);
+  assert.equal(p2.length, 50);
+  assert.equal(new Set([...p1, ...p2].map((p) => p.id)).size, 100);
+  assert.equal((await request("/community/posts?offset=-1")).status, 400);
+});
+
+test("撤回后可重新申请并保留同一会话，已接受申请不会被重置", async () => {
+  const east = await login("captain-east"),
+    west = await login("captain-west");
+  const p = await request("/community/posts", {
+    token: east,
+    method: "POST",
+    body: {
+      kind: "seeking",
+      title: "重提申请验证",
+      city: "上海",
+      category: "20cm",
+      level: "入门",
+      availability: "周末",
+      venue: "",
+      body: "寻找可以一起训练的队伍",
+    },
+  });
+  const first = await request(`/community/posts/${p.data.id}/applications`, {
+    token: west,
+    method: "POST",
+    body: { message: "第一次联系", teamId: "team-west" },
+  });
+  await request(`/community/applications/${first.data.id}`, {
+    token: west,
+    method: "PATCH",
+    body: { status: "withdrawn" },
+  });
+  const second = await request(`/community/posts/${p.data.id}/applications`, {
+    token: west,
+    method: "POST",
+    body: { message: "重新申请联系", teamId: "team-west" },
+  });
+  assert.equal(second.data.id, first.data.id);
+  assert.equal(second.data.status, "pending");
+  assert.equal(second.data.message, "重新申请联系");
+  await request(`/community/applications/${first.data.id}`, {
+    token: east,
+    method: "PATCH",
+    body: { status: "accepted" },
+  });
+  assert.equal(
+    (
+      await request(`/community/posts/${p.data.id}/applications`, {
+        token: west,
+        method: "POST",
+        body: { message: "再次点击", teamId: "team-west" },
+      })
+    ).data.status,
+    "accepted",
+  );
+});
+
+test("队伍成员可查看成员并退出，其他账号不能读取，退出不更改报名名单", async () => {
+  const east = await login("captain-east"),
+    west = await login("captain-west"),
+    third = await login("captain-third");
+  await pool.query(
+    "INSERT INTO team_members(team_id,account_id) VALUES('team-east','captain-west') ON CONFLICT DO NOTHING",
+  );
+  const before = (await request("/teams", { token: east })).data.find(
+    (t) => t.id === "team-east",
+  ).roster;
+  assert.ok(
+    (
+      await request("/community/teams/team-east/members", { token: west })
+    ).data.some((m) => m.id === "captain-west"),
+  );
+  assert.equal(
+    (await request("/community/teams/team-east/members", { token: third }))
+      .status,
+    404,
+  );
+  assert.equal(
+    (
+      await request("/community/teams/team-east/members/captain-west", {
+        token: third,
+        method: "DELETE",
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await request("/community/teams/team-east/members/captain-west", {
+        token: west,
+        method: "DELETE",
+      })
+    ).status,
+    200,
+  );
+  assert.ok(
+    !(await request("/community/memberships", { token: west })).data.some(
+      (m) => m.teamId === "team-east",
+    ),
+  );
+  assert.deepEqual(
+    (await request("/teams", { token: east })).data.find(
+      (t) => t.id === "team-east",
+    ).roster,
+    before,
+  );
+});
+
+test("留言未读按接收者隔离，已读只标记实际查看消息", async () => {
+  const east = await login("captain-east"),
+    west = await login("captain-west"),
+    third = await login("captain-third");
+  const a = (
+    await request("/community/applications", { token: west })
+  ).data.find((a) => a.authorId === "captain-east");
+  await request(`/community/applications/${a.id}/messages`, {
+    token: east,
+    method: "POST",
+    body: { body: "未读测试消息" },
+  });
+  assert.ok(
+    (await request("/community/applications", { token: west })).data.find(
+      (x) => x.id === a.id,
+    ).unreadCount > 0,
+  );
+  const messages = (
+    await request(`/community/applications/${a.id}/messages`, { token: west })
+  ).data;
+  assert.equal(
+    (
+      await request(`/community/applications/${a.id}/read`, {
+        token: third,
+        method: "POST",
+        body: { messageIds: messages.map((m) => m.id) },
+      })
+    ).status,
+    404,
+  );
+  assert.equal(
+    (
+      await request(`/community/applications/${a.id}/read`, {
+        token: west,
+        method: "POST",
+        body: { messageIds: messages.map((m) => m.id) },
+      })
+    ).status,
+    201,
+  );
+  assert.equal(
+    (await request("/community/applications", { token: west })).data.find(
+      (x) => x.id === a.id,
+    ).unreadCount,
+    0,
+  );
+});
+
+test("个人资料与反馈持久化且反馈仅本人可见，公开参赛队伍不暴露名单", async () => {
+  const east = await login("captain-east"),
+    west = await login("captain-west");
+  assert.equal(
+    (
+      await request("/me", {
+        token: east,
+        method: "PATCH",
+        body: { name: "测试队长新昵称" },
+      })
+    ).data.name,
+    "测试队长新昵称",
+  );
+  assert.equal(
+    (await request("/me", { token: east })).data.name,
+    "测试队长新昵称",
+  );
+  const f = await request("/feedback", {
+    token: east,
+    method: "POST",
+    body: { category: "使用建议", body: "希望在赛事详情查看交通信息" },
+  });
+  assert.equal(f.status, 201);
+  assert.ok(
+    (await request("/feedback", { token: east })).data.some(
+      (x) => x.id === f.data.id,
+    ),
+  );
+  assert.ok(
+    !(await request("/feedback", { token: west })).data.some(
+      (x) => x.id === f.data.id,
+    ),
+  );
+  assert.equal((await request("/feedback")).status, 401);
+  const participants = await request("/tournaments/event-sky/participants");
+  assert.equal(participants.status, 200);
+  assert.ok(
+    participants.data.every((x) => !("roster" in x) && !("applicantId" in x)),
+  );
+});
+
+test("找队邀请必须关联自己的队伍，接受后飞手成为受邀队伍成员", async () => {
+  const east = await login("captain-east"),
+    west = await login("captain-west");
+  const p = await request("/community/posts", {
+    token: east,
+    method: "POST",
+    body: {
+      kind: "seeking",
+      title: "寻找长期训练队伍",
+      city: "上海",
+      category: "20cm",
+      level: "进阶",
+      availability: "周末",
+      venue: "",
+      body: "希望每周与固定队伍一起训练",
+    },
+  });
+  assert.equal(
+    (
+      await request(`/community/posts/${p.data.id}/applications`, {
+        token: west,
+        method: "POST",
+        body: { message: "欢迎加入" },
+      })
+    ).status,
+    400,
+  );
+  const a = await request(`/community/posts/${p.data.id}/applications`, {
+    token: west,
+    method: "POST",
+    body: { teamId: "team-west", message: "邀请你加入我们的队伍" },
+  });
+  assert.equal(a.status, 201);
+  assert.equal(
+    (
+      await request(`/community/applications/${a.data.id}`, {
+        token: east,
+        method: "PATCH",
+        body: { status: "accepted" },
+      })
+    ).status,
+    200,
+  );
+  assert.ok(
+    (await request("/community/memberships", { token: east })).data.some(
+      (x) => x.teamId === "team-west",
+    ),
+  );
+});
+
+test("赛事赛程只允许本机构主办方发布，拒绝冲突，比分更新受版本保护", async () => {
+  const host = await login("organizer-east"),
+    other = await login("organizer-west"),
+    captain = await login("captain-east");
+  await pool.query(`INSERT INTO registrations(id,tournament_id,team_id,applicant_id,team_name,roster,status) VALUES
+ ('schedule-a','event-open','team-east','captain-east','赛程测试甲队','[]','approved'),
+ ('schedule-b','event-open','team-west','captain-west','赛程测试乙队','[]','approved') ON CONFLICT DO NOTHING`);
+  const body = {
+    homeRegistrationId: "schedule-a",
+    awayRegistrationId: "schedule-b",
+    startsAt: "2099-01-01T08:00:00Z",
+    endsAt: "2099-01-01T08:30:00Z",
+    venue: "测试场地A",
+    stage: "小组赛",
+    status: "scheduled",
+    homeScore: null,
+    awayScore: null,
+    note: "",
+  };
+  assert.equal(
+    (
+      await request("/tournaments/event-open/matches", {
+        token: captain,
+        method: "POST",
+        body,
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await request("/tournaments/event-open/matches", {
+        token: other,
+        method: "POST",
+        body,
+      })
+    ).status,
+    403,
+  );
+  const created = await request("/tournaments/event-open/matches", {
+    token: host,
+    method: "POST",
+    body,
+  });
+  assert.equal(created.status, 201);
+  assert.equal(
+    (
+      await request("/tournaments/event-open/matches", {
+        token: host,
+        method: "POST",
+        body,
+      })
+    ).status,
+    409,
+  );
+  const listed = (await request("/tournaments/event-open/matches")).data;
+  assert.equal(listed[0].homeName, "赛程测试甲队");
+  assert.ok(!("roster" in listed[0]));
+  const result = {
+    ...body,
+    startsAt: "2020-01-01T08:00:00Z",
+    endsAt: "2020-01-01T08:30:00Z",
+    status: "final",
+    homeScore: 2,
+    awayScore: 1,
+    note: "主办方确认的比赛结果",
+    version: created.data.version,
+  };
+  const saved = await request(
+    `/tournaments/event-open/matches/${created.data.id}`,
+    { token: host, method: "PUT", body: result },
+  );
+  assert.equal(saved.status, 200);
+  assert.equal(saved.data.homeScore, 2);
+  assert.equal(
+    (
+      await request(`/tournaments/event-open/matches/${created.data.id}`, {
+        token: host,
+        method: "PUT",
+        body: result,
+      })
+    ).status,
+    409,
+  );
+  const invalid = {
+    ...body,
+    homeRegistrationId: "schedule-b",
+    awayRegistrationId: "schedule-b",
+  };
+  assert.equal(
+    (
+      await request("/tournaments/event-open/matches", {
+        token: host,
+        method: "POST",
+        body: invalid,
+      })
+    ).status,
+    400,
+  );
+});
+
+test("队伍赛程按当前成员关系查询，不暴露无关比赛", async () => {
+  const east = await login("captain-east"),
+    third = await login("captain-third"),
+    host = await login("organizer-east");
+  assert.equal((await request("/me/matches")).status, 401);
+  assert.ok(
+    (await request("/me/matches", { token: east })).data.some(
+      (m) => m.homeRegistrationId === "schedule-a",
+    ),
+  );
+  assert.ok(
+    !(await request("/me/matches", { token: third })).data.some(
+      (m) => m.homeRegistrationId === "schedule-a",
+    ),
+  );
+  assert.ok(
+    (await request("/me/matches", { token: host })).data.some(
+      (m) => m.homeRegistrationId === "schedule-a",
+    ),
+  );
+});
+
+test("并发排赛只能占用一次队伍时段，未来比赛不能直接发布结束比分", async () => {
+  const host = await login("organizer-east");
+  const body = {
+    homeRegistrationId: "schedule-a",
+    awayRegistrationId: "schedule-b",
+    startsAt: "2099-01-02T08:00:00Z",
+    endsAt: "2099-01-02T08:30:00Z",
+    venue: "并发场地",
+    stage: "交流赛",
+    status: "scheduled",
+    note: "",
+  };
+  const results = await Promise.all(
+    [1, 2].map(() =>
+      request("/tournaments/event-open/matches", {
+        token: host,
+        method: "POST",
+        body,
+      }),
+    ),
+  );
+  assert.deepEqual(results.map((x) => x.status).sort(), [201, 409]);
+  const futureResult = await request("/tournaments/event-open/matches", {
+    token: host,
+    method: "POST",
+    body: { ...body, status: "final", homeScore: 2, awayScore: 1 },
+  });
+  assert.equal(futureResult.status, 400);
 });

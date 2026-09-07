@@ -22,7 +22,7 @@ enum PostKind: String, CaseIterable, Identifiable, Codable {
   var action: String {
     switch self {
     case .recruit: "申请入队"
-    case .seeking: "邀请联系"
+    case .seeking: "邀请入队"
     case .friendly: "申请应约"
     case .volunteer: "报名志愿者"
     }
@@ -56,6 +56,7 @@ struct CommunityApplication: Codable, Identifiable {
   let id, postId, applicantId, applicantName, message, status, createdAt, authorId, postTitle, kind,
     postStatus, city, category: String
   let teamId, teamName: String?
+  let unreadCount: Int?
   var statusLabel: String {
     ["pending": "待处理", "accepted": "已接受", "rejected": "未接受", "withdrawn": "已撤回"][status] ?? status
   }

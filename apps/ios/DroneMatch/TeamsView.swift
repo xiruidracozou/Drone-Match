@@ -7,51 +7,69 @@ struct TeamsView: View {
     List {
       if store.error != nil { Section { SyncNotice() } }
       if store.account == nil {
-        ContentUnavailableView {
-          Label("管理你的队伍", systemImage: "person.2")
-        } description: {
-          Text("登录后可创建队伍、维护名单并报名赛事。")
-        } actions: {
-          Button("登录") { store.showLogin = true }.buttonStyle(.borderedProminent)
+        Section {
+          EmptyPanel(title: "找到你的队伍", detail: "登录后管理队伍，或接受招募加入其他队伍。", icon: "person.3")
+          Button("登录") { store.showLogin = true }.frame(minHeight: 44)
         }
-      } else if store.isLoading && store.teams.isEmpty {
-        ProgressView("正在加载队伍")
       } else {
-        if store.teams.isEmpty && store.error == nil {
-          ContentUnavailableView {
-            Label("还没有队伍", systemImage: "person.2")
-          } description: {
-            Text("创建队伍并添加名单，即可选择赛事报名。")
-          } actions: {
-            Button("创建队伍") { showCreate = true }.buttonStyle(.borderedProminent)
+        Section("我管理的") {
+          if store.isLoading && store.teams.isEmpty {
+            ProgressView("正在加载")
+          } else if store.teams.isEmpty {
+            Text("暂无管理的队伍").font(TypeScale.body).foregroundStyle(.secondary)
+          }
+          ForEach(store.teams) { team in
+            NavigationLink {
+              TeamDetail(initial: team)
+            } label: {
+              HStack(spacing: 16) {
+                ClubAvatar(name: team.name)
+                VStack(alignment: .leading, spacing: 8) {
+                  Text(team.name).font(TypeScale.heading)
+                  Text(team.city + " · " + team.category + " · 名单 \(team.roster.count) 人").font(
+                    TypeScale.caption
+                  ).foregroundStyle(.secondary)
+                }
+              }.padding(.vertical, 8)
+            }
+          }
+          if store.account?.role == "captain" {
+            Button {
+              showCreate = true
+            } label: {
+              Label("创建队伍", systemImage: "plus.circle").frame(minHeight: 44)
+            }
           }
         }
-        ForEach(store.teams) { team in
+        Section("我加入的") {
+          if store.memberships.isEmpty {
+            Text("通过招募加入后，队伍会显示在这里。").font(TypeScale.body).foregroundStyle(.secondary)
+          }
+          ForEach(store.memberships) { membership in
+            NavigationLink {
+              TeamMembersView(teamID: membership.teamId, teamName: membership.teamName)
+            } label: {
+              HStack(spacing: 16) {
+                ClubAvatar(name: membership.teamName)
+                VStack(alignment: .leading, spacing: 8) {
+                  Text(membership.teamName).font(TypeScale.heading)
+                  Text(membership.city + " · " + membership.category).font(TypeScale.caption)
+                    .foregroundStyle(.secondary)
+                }
+              }.padding(.vertical, 8)
+            }
+          }
           NavigationLink {
-            TeamDetail(initial: team)
+            CommunityView(kind: .recruit)
           } label: {
-            HStack(spacing: 14) {
-              ClubAvatar(name: team.name, size: 50)
-              VStack(alignment: .leading, spacing: 8) {
-                Text(team.name).font(.headline)
-                Text("\(team.city) · \(team.category) 级 · \(team.roster.count) 人").font(
-                  .subheadline
-                ).foregroundStyle(.secondary)
-              }
-            }.padding(.vertical, 12)
+            Label("看看哪些队伍正在招募", systemImage: "person.2.badge.plus").frame(minHeight: 44)
           }
         }
       }
-    }
-    .navigationTitle("队伍").refreshable { await store.refresh() }
-    .toolbar {
-      if store.account != nil {
-        ToolbarItem(placement: .primaryAction) {
-          Button("创建队伍", systemImage: "plus") { showCreate = true }
-        }
-      }
-    }
-    .sheet(isPresented: $showCreate) { TeamEditor() }
+    }.navigationTitle("我的队伍").navigationBarTitleDisplayMode(.inline).refreshable {
+      await store.refresh()
+    }.task { await store.refresh() }
+      .sheet(isPresented: $showCreate) { TeamEditor() }
   }
 }
 
@@ -73,10 +91,10 @@ struct TeamDetail: View {
       } else {
         if store.error != nil { Section { SyncNotice() } }
         Section {
-          HStack(spacing: 14) {
+          HStack(spacing: 16) {
             ClubAvatar(name: team.name, size: 56)
             VStack(alignment: .leading, spacing: 8) {
-              Text(team.name).font(.title3.weight(.semibold))
+              Text(team.name).font(TypeScale.heading)
               Text(team.city + " · " + team.category + " 级").font(.subheadline).foregroundStyle(
                 .secondary)
             }
@@ -94,6 +112,13 @@ struct TeamDetail: View {
           Text("当前名单 · \(team.roster.count) 人")
         } footer: {
           Text("名单用于之后的报名。已提交报名的名单保持不变。")
+        }
+        Section {
+          NavigationLink {
+            TeamMembersView(teamID: team.id, teamName: team.name)
+          } label: {
+            Label("社区成员", systemImage: "person.2")
+          }
         }
         Section("这支队伍的报名") {
           if entries.isEmpty { Text("暂无报名记录").foregroundStyle(.secondary) }

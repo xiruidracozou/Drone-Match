@@ -71,3 +71,24 @@ CREATE TABLE IF NOT EXISTS community_messages (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS community_messages_application ON community_messages(application_id,created_at);
+
+CREATE TABLE IF NOT EXISTS community_message_reads (
+  message_id text NOT NULL REFERENCES community_messages(id), account_id text NOT NULL REFERENCES accounts(id),
+  PRIMARY KEY(message_id,account_id)
+);
+CREATE TABLE IF NOT EXISTS feedback (
+  id text PRIMARY KEY, account_id text NOT NULL REFERENCES accounts(id),
+  category text NOT NULL, body text NOT NULL, status text NOT NULL DEFAULT 'received',
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS matches (
+  id text PRIMARY KEY, tournament_id text NOT NULL REFERENCES tournaments(id),
+  home_registration_id text NOT NULL REFERENCES registrations(id), away_registration_id text NOT NULL REFERENCES registrations(id),
+  starts_at timestamptz NOT NULL, ends_at timestamptz NOT NULL, venue text NOT NULL, stage text NOT NULL,
+  status text NOT NULL CHECK(status IN ('scheduled','final','cancelled')),
+  home_score integer, away_score integer, note text NOT NULL DEFAULT '', version integer NOT NULL DEFAULT 1,
+  CHECK(home_registration_id<>away_registration_id), CHECK(ends_at>starts_at),
+  CHECK((status='final' AND home_score BETWEEN 0 AND 999 AND away_score BETWEEN 0 AND 999 AND home_score IS NOT NULL AND away_score IS NOT NULL)
+    OR (status<>'final' AND home_score IS NULL AND away_score IS NULL))
+);
+CREATE INDEX IF NOT EXISTS matches_tournament ON matches(tournament_id,starts_at);

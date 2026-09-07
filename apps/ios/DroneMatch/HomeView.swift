@@ -4,7 +4,7 @@ struct EventsView: View {
   @EnvironmentObject private var store: AppStore
   @State private var search = ""
   @State private var category = "全部"
-  @State private var city = "全国"
+  @AppStorage("selectedCity") private var city = "全国"
   @State private var openOnly = false
   @FocusState private var searching: Bool
 
@@ -26,7 +26,7 @@ struct EventsView: View {
       ScrollView {
         VStack(alignment: .leading, spacing: 0) {
           HStack {
-            Text("无人机足球").font(.title2.weight(.bold))
+            Text("赛事").font(TypeScale.title)
             Spacer()
             Menu {
               Picker("赛事城市", selection: $city) {
@@ -37,12 +37,12 @@ struct EventsView: View {
               HStack(spacing: 5) {
                 Image(systemName: "mappin.and.ellipse")
                 Text(city)
-                Image(systemName: "chevron.down").font(.caption2)
+                Image(systemName: "chevron.down").font(TypeScale.caption)
               }
               .font(.subheadline).frame(minHeight: 44)
             }.accessibilityLabel("选择赛事城市，当前\(city)")
           }.padding(.top, 8).padding(.bottom, 14)
-          HStack(spacing: 10) {
+          HStack(spacing: 12) {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
             TextField("搜索赛事、城市或主办方", text: $search)
               .font(.subheadline).focused($searching).submitLabel(.search)
@@ -56,14 +56,14 @@ struct EventsView: View {
               }.accessibilityLabel("清除搜索")
             }
           }.padding(.leading, 14).padding(.trailing, 4).frame(minHeight: 48)
-            .background(Theme.background, in: RoundedRectangle(cornerRadius: 10))
+            .background(Theme.background, in: RoundedRectangle(cornerRadius: 12))
           HStack(spacing: 20) {
             ForEach(["全部", "20cm", "40cm"], id: \.self) { value in
               Button {
                 category = value
                 searching = false
               } label: {
-                VStack(spacing: 9) {
+                VStack(spacing: 8) {
                   Text(value == "全部" ? "全部赛事" : value + " 级").font(
                     .subheadline.weight(category == value ? .semibold : .regular))
                   Capsule().fill(category == value ? Theme.accent : .clear).frame(height: 3)
@@ -116,7 +116,7 @@ struct EventsView: View {
           }
         }.padding(.horizontal, 20).padding(.bottom, 28).frame(maxWidth: 680)
       }
-      .frame(maxWidth: .infinity).background(Theme.page)
+      .frame(maxWidth: .infinity).background(Theme.background)
       .scrollDismissesKeyboard(.interactively)
       .toolbar(.hidden, for: .navigationBar)
       .navigationDestination(for: Tournament.self) { TournamentDetail(initial: $0) }
@@ -138,12 +138,13 @@ struct ParticipationGuide: View {
         Text("队伍资料和人员名单可以在队伍详情中编辑。编辑只影响之后的报名，不改变已提交的名单。").font(.subheadline)
       }
       Section("当前版本") {
-        Text("仅使用虚构的成年演示资料。真实身份、监护关系、赛程和成绩尚未接入。").font(.footnote).foregroundStyle(.secondary)
+        Text("仅使用虚构的成年演示资料。真实身份、监护关系和个人出场记录尚未接入。").font(TypeScale.caption).foregroundStyle(
+          .secondary)
       }
     }.navigationTitle("参赛指南").navigationBarTitleDisplayMode(.inline)
   }
   private func step(_ number: String, _ title: String, _ text: String) -> some View {
-    HStack(alignment: .top, spacing: 14) {
+    HStack(alignment: .top, spacing: 16) {
       Text(number).font(.headline).foregroundStyle(Theme.accent).frame(width: 24)
       VStack(alignment: .leading, spacing: 8) {
         Text(title).font(.headline)
