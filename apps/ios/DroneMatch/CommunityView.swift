@@ -82,7 +82,8 @@ struct CommunityView: View {
           } description: {
             Text("换个城市或级别，也可以先发布一条。")
           } actions: {
-            Button(selected.publish) { beginCompose() }.buttonStyle(.borderedProminent)
+            Button(selected.publish) { beginCompose() }.buttonStyle(.borderedProminent).tint(
+              Theme.solidAccent)
           }
         }
         ForEach(filtered) { post in
@@ -259,7 +260,8 @@ struct CommunityDetail: View {
               if app.status == "pending" && post.isOpen {
                 HStack {
                   Button("接受申请") { Task { await review(app, "accepted") } }.buttonStyle(
-                    .borderedProminent)
+                    .borderedProminent
+                  ).tint(Theme.solidAccent)
                   Button("不接受") { Task { await review(app, "rejected") } }.buttonStyle(.bordered)
                 }.disabled(busy)
               }
@@ -305,6 +307,7 @@ struct CommunityDetail: View {
               !post.isOpen || (ownApplication != nil && ownApplication?.status != "withdrawn"))
           }
         }.font(.headline).frame(maxWidth: .infinity, minHeight: 48).buttonStyle(.borderedProminent)
+          .tint(Theme.solidAccent)
           .padding(.horizontal, 20).padding(.vertical, 12).background(.bar)
       }
       .sheet(
@@ -389,6 +392,25 @@ struct CommunityComposer: View {
   @State private var error: String?
   @State private var showTeam = false
   private var needsTeam: Bool { kind == .recruit || kind == .friendly }
+  private var validationMessage: String? {
+    for (name, value) in [("标题", title), ("城市", city), ("经验或岗位", level), ("可参与时间", availability)] {
+      if !(2...80).contains(value.trimmingCharacters(in: .whitespacesAndNewlines).count) {
+        return "请填写2–80个字的" + name + "。"
+      }
+    }
+    if needsTeam && teamId.isEmpty { return "请选择一支对应级别的队伍。" }
+    if !(8...2000).contains(bodyText.trimmingCharacters(in: .whitespacesAndNewlines).count) {
+      return "请填写8–2000个字的详细说明。"
+    }
+    let venueCount = venue.trimmingCharacters(in: .whitespacesAndNewlines).count
+    if venueCount > 120 { return "场地说明最多120个字。" }
+    if kind == .friendly || kind == .volunteer {
+      if venueCount < 2 { return "请填写活动场地。" }
+      if startsAt <= Date() { return "请选择未来的活动时间。" }
+    }
+    return nil
+  }
+
   var body: some View {
     NavigationStack {
       Form {
@@ -438,6 +460,9 @@ struct CommunityComposer: View {
               .secondary)
           }
         }
+        if let validationMessage {
+          Section { Text(validationMessage).font(TypeScale.body).foregroundStyle(.secondary) }
+        }
         if let error { Section { Text(error).foregroundStyle(.red) } }
       }.disabled(busy).navigationTitle(kind.publish).navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -447,7 +472,7 @@ struct CommunityComposer: View {
               Task { await publish() }
             } label: {
               if busy { ProgressView() } else { Text("发布") }
-            }.disabled(busy)
+            }.disabled(busy || validationMessage != nil)
           }
         }
         .sheet(isPresented: $showTeam) {
@@ -458,23 +483,8 @@ struct CommunityComposer: View {
     }
   }
   private func publish() async {
-    guard title.trimmingCharacters(in: .whitespaces).count >= 2,
-      city.trimmingCharacters(in: .whitespaces).count >= 2,
-      availability.trimmingCharacters(in: .whitespaces).count >= 2,
-      bodyText.trimmingCharacters(in: .whitespacesAndNewlines).count >= 8
-    else {
-      error = "请填写标题、城市、时间和至少 8 个字的说明。"
-      return
-    }
-    guard !needsTeam || !teamId.isEmpty else {
-      error = "请选择一支对应级别的队伍。"
-      return
-    }
-    guard
-      !(kind == .friendly || kind == .volunteer)
-        || venue.trimmingCharacters(in: .whitespaces).count >= 2
-    else {
-      error = "请填写活动场地。"
+    if let validationMessage {
+      error = validationMessage
       return
     }
     busy = true

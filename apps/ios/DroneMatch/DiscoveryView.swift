@@ -88,7 +88,7 @@ struct DiscoveryView: View {
               NavigationLink {
                 TournamentDetail(initial: event)
               } label: {
-                EventRow(event: event)
+                EventRow(event: event, showsMonth: true)
               }.buttonStyle(.plain)
             }
           } else if store.isLoading {
@@ -190,7 +190,11 @@ struct DiscoveryView: View {
                 ) { Text($0).tag($0) }
               }
             } label: {
-              Label(city, systemImage: "location").font(TypeScale.body)
+              HStack(spacing: 4) {
+                Image(systemName: "location")
+                Text(city).lineLimit(1)
+              }.font(TypeScale.body).fixedSize(horizontal: true, vertical: false)
+                .accessibilityLabel("选择城市，当前" + city)
             }
           }
           ToolbarItem(placement: .topBarTrailing) {

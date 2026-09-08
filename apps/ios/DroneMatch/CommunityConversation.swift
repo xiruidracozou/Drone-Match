@@ -75,7 +75,7 @@ struct CommunityConversation: View {
               } else {
                 Image(systemName: "arrow.up").font(.headline).frame(width: 44, height: 44)
               }
-            }.buttonStyle(.borderedProminent).disabled(
+            }.buttonStyle(.borderedProminent).tint(Theme.solidAccent).disabled(
               !loaded || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 || draft.count > 1000 || sending)
           }.padding(16).background(.bar)

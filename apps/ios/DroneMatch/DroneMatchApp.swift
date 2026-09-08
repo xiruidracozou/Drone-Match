@@ -109,9 +109,11 @@ struct ClubAvatar: View {
 
 struct EventRow: View {
   let event: Tournament
+  var showsMonth = false
   var body: some View {
     HStack(alignment: .top, spacing: 16) {
       VStack(spacing: 4) {
+        if showsMonth { Text(event.monthLabel).font(TypeScale.caption).foregroundStyle(.secondary) }
         Text(event.dayLabel).font(TypeScale.title).monospacedDigit()
         Text(event.weekdayLabel).font(.caption).foregroundStyle(.secondary)
       }

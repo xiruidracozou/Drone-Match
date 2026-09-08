@@ -72,7 +72,9 @@ struct CareerView: View {
                 ProgressView("正在加载记录")
               } else if store.registrations.isEmpty && store.error == nil {
                 EmptyPanel(title: "从第一场比赛开始", detail: "选择赛事、确认队伍名单后提交报名。进度会保存在这里。", icon: "trophy")
-                Button("寻找赛事") { store.selectedTab = 0 }.buttonStyle(.borderedProminent).frame(
+                Button("寻找赛事") { store.selectedTab = 0 }.buttonStyle(.borderedProminent).tint(
+                  Theme.solidAccent
+                ).frame(
                   minHeight: 44)
               }
               ForEach(store.registrations) { entry in
@@ -114,7 +116,9 @@ struct CareerView: View {
           } else {
             EmptyPanel(
               title: "记录你的每一次参与", detail: "登录后，队伍、报名进展和社区活动会汇集在这里。", icon: "person.crop.rectangle")
-            Button("登录并查看") { store.showLogin = true }.buttonStyle(.borderedProminent).frame(
+            Button("登录并查看") { store.showLogin = true }.buttonStyle(.borderedProminent).tint(
+              Theme.solidAccent
+            ).frame(
               minHeight: 44)
             NavigationLink("先了解参赛流程") { ParticipationGuide() }.frame(minHeight: 44)
           }
