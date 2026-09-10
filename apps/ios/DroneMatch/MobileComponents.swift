@@ -36,6 +36,7 @@ struct FilterChip: View {
   var body: some View {
     Button(action: action) {
       Text(title).font(TypeScale.body.weight(selected ? .semibold : .regular))
+        .fixedSize(horizontal: true, vertical: false)
         .padding(.horizontal, 16).frame(minHeight: 44)
         .foregroundStyle(selected ? Theme.onAccent : .primary)
         .background(selected ? Theme.solidAccent : Theme.surface, in: Capsule())

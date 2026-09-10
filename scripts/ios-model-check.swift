@@ -21,6 +21,31 @@ struct ModelChecks {
           of: "\"approved\":0", with: "\"approved\":16"
         ).utf8))
     precondition(!full.canRegister && full.statusLabel == "名额已满")
-    print("iOS model checks passed: expiry, open registration, capacity")
+    for kind in PostKind.allCases {
+      precondition(
+        ApplicationDraft(message: " \n ", teamId: "team").validationMessage(for: kind) != nil)
+      precondition(
+        ApplicationDraft(message: "好", teamId: "team").validationMessage(for: kind) != nil)
+      precondition(
+        ApplicationDraft(message: "周末可参与", teamId: "team").validationMessage(for: kind) == nil)
+      precondition(
+        ApplicationDraft(message: String(repeating: "好", count: 500), teamId: "team")
+          .validationMessage(for: kind) == nil)
+      precondition(
+        ApplicationDraft(message: String(repeating: "好", count: 501), teamId: "team")
+          .validationMessage(for: kind) != nil, "申请留言不能超过服务端500字符限制")
+    }
+    for kind in [PostKind.friendly, .seeking] {
+      precondition(
+        ApplicationDraft(message: "周末可参与", teamId: nil).validationMessage(for: kind) != nil)
+    }
+    for kind in [PostKind.recruit, .volunteer] {
+      precondition(
+        ApplicationDraft(message: "周末可参与", teamId: nil).validationMessage(for: kind) == nil)
+    }
+    precondition(
+      ApplicationDraft(message: String(repeating: "🚁", count: 251), teamId: "team")
+        .validationMessage(for: .recruit) != nil, "字符长度应与服务端UTF16规则一致")
+    print("iOS model checks passed: registration states and application input boundaries")
   }
 }

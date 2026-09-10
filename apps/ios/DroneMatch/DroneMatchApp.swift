@@ -108,38 +108,46 @@ struct ClubAvatar: View {
 }
 
 struct EventRow: View {
+  @Environment(\.dynamicTypeSize) private var typeSize
   let event: Tournament
   var showsMonth = false
   var body: some View {
-    HStack(alignment: .top, spacing: 16) {
-      VStack(spacing: 4) {
-        if showsMonth { Text(event.monthLabel).font(TypeScale.caption).foregroundStyle(.secondary) }
-        Text(event.dayLabel).font(TypeScale.title).monospacedDigit()
-        Text(event.weekdayLabel).font(.caption).foregroundStyle(.secondary)
-      }
-      .frame(width: 40).accessibilityElement(children: .ignore)
-      .accessibilityLabel(event.dateLabel)
-      VStack(alignment: .leading, spacing: 8) {
-        Text(event.title).font(.headline).foregroundStyle(.primary)
-          .fixedSize(horizontal: false, vertical: true)
-        Text(event.city + " · " + event.venue)
-          .font(.subheadline).foregroundStyle(.secondary)
-          .fixedSize(horizontal: false, vertical: true)
-        ViewThatFits(in: .horizontal) {
-          HStack {
-            Text(event.category + " 级")
-            Spacer(minLength: 12)
-            StatusBadge(text: event.statusLabel)
+    (typeSize.isAccessibilitySize
+      ? AnyLayout(VStackLayout(alignment: .leading, spacing: 16))
+      : AnyLayout(HStackLayout(alignment: .top, spacing: 16))) {
+        (typeSize.isAccessibilitySize
+          ? AnyLayout(HStackLayout(spacing: 12)) : AnyLayout(VStackLayout(spacing: 4))) {
+            if showsMonth {
+              Text(event.monthLabel).font(TypeScale.caption).foregroundStyle(.secondary)
+            }
+            Text(event.dayLabel).font(TypeScale.title).monospacedDigit()
+            Text(event.weekdayLabel).font(.caption).foregroundStyle(.secondary)
           }
-          VStack(alignment: .leading, spacing: 8) {
-            Text(event.category + " 级")
-            StatusBadge(text: event.statusLabel)
-          }
-        }.font(.caption).foregroundStyle(.secondary)
+          .fixedSize().frame(width: typeSize.isAccessibilitySize ? nil : 40).accessibilityElement(
+            children: .ignore
+          )
+          .accessibilityLabel(event.dateLabel)
+        VStack(alignment: .leading, spacing: 8) {
+          Text(event.title).font(.headline).foregroundStyle(.primary)
+            .fixedSize(horizontal: false, vertical: true)
+          Text(event.city + " · " + event.venue)
+            .font(.subheadline).foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+          ViewThatFits(in: .horizontal) {
+            HStack {
+              Text(event.category + " 级")
+              Spacer(minLength: 12)
+              StatusBadge(text: event.statusLabel)
+            }
+            VStack(alignment: .leading, spacing: 8) {
+              Text(event.category + " 级")
+              StatusBadge(text: event.statusLabel)
+            }
+          }.font(.caption).foregroundStyle(.secondary)
+        }
       }
-    }
-    .padding(.vertical, 20).frame(maxWidth: .infinity, alignment: .leading)
-    .contentShape(Rectangle())
+      .padding(.vertical, 20).frame(maxWidth: .infinity, alignment: .leading)
+      .contentShape(Rectangle())
   }
 }
 

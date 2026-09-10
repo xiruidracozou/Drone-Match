@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct DiscoveryView: View {
+  @Environment(\.dynamicTypeSize) private var typeSize
   @EnvironmentObject private var store: AppStore
   @State private var posts: [CommunityPost] = []
   @State private var teams: [PublicTeam] = []
@@ -31,7 +32,9 @@ struct DiscoveryView: View {
         VStack(alignment: .leading, spacing: 24) {
           if term.isEmpty {
             LazyVGrid(
-              columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 16
+              columns: Array(
+                repeating: GridItem(.flexible(), spacing: 8),
+                count: typeSize.isAccessibilitySize ? 1 : 3), spacing: 16
             ) {
               ForEach(PostKind.allCases) { kind in
                 NavigationLink {
@@ -63,7 +66,7 @@ struct DiscoveryView: View {
                       TypeScale.caption
                     ).foregroundStyle(.secondary)
                   }
-                  Spacer()
+                  .frame(maxWidth: .infinity, alignment: .leading).layoutPriority(1)
                   UnreadBadge(count: store.unreadCount)
                   Image(systemName: "chevron.right").font(TypeScale.caption)
                 }.padding(16).background(Theme.surface, in: RoundedRectangle(cornerRadius: 12))
@@ -72,7 +75,9 @@ struct DiscoveryView: View {
           }
           SyncNotice()
           if let error { InlineFailure(message: error) { Task { await load() } } }
-          HStack {
+          (typeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) : AnyLayout(HStackLayout()))
+          {
             SectionHeading(
               title: term.isEmpty ? "近期可报名" : "赛事", subtitle: term.isEmpty ? "按比赛日期排列" : nil)
             Button("全部") { store.selectedTab = 0 }.font(TypeScale.body).frame(minHeight: 44)
@@ -96,7 +101,9 @@ struct DiscoveryView: View {
           } else if store.error == nil {
             EmptyPanel(title: "暂无符合条件的赛事", detail: "切换城市或前往赛事页查看其他安排。", icon: "calendar")
           }
-          HStack {
+          (typeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) : AnyLayout(HStackLayout()))
+          {
             SectionHeading(title: term.isEmpty ? "招募与约赛" : "社区信息")
             NavigationLink("全部") { CommunityView(kind: .recruit) }.font(TypeScale.body).frame(
               minHeight: 44)
@@ -246,38 +253,50 @@ struct DiscoveryView: View {
   }
 }
 struct ServiceShortcut: View {
+  @Environment(\.dynamicTypeSize) private var typeSize
   let title, icon: String
   var body: some View {
-    VStack(spacing: 12) {
-      Image(systemName: icon).font(.system(size: 25, weight: .medium)).foregroundStyle(Theme.accent)
+    (typeSize.isAccessibilitySize
+      ? AnyLayout(HStackLayout(spacing: 16)) : AnyLayout(VStackLayout(spacing: 12))) {
+        Image(systemName: icon).font(.system(size: 25, weight: .medium)).foregroundStyle(
+          Theme.accent
+        )
         .frame(height: 32)
-      Text(title).font(.subheadline.weight(.medium)).foregroundStyle(.primary)
-    }.frame(maxWidth: .infinity, minHeight: 72).contentShape(Rectangle())
+        Text(title).font(.subheadline.weight(.medium)).foregroundStyle(.primary)
+      }.frame(
+        maxWidth: .infinity, minHeight: 72,
+        alignment: typeSize.isAccessibilitySize ? .leading : .center
+      ).contentShape(Rectangle())
   }
 }
 struct FeaturedTournament: View {
+  @Environment(\.dynamicTypeSize) private var typeSize
   let event: Tournament
   var body: some View {
-    HStack(alignment: .top, spacing: 16) {
-      VStack(alignment: .leading, spacing: 12) {
-        Text(event.category + " 级赛事").font(.caption.weight(.semibold)).foregroundStyle(
-          .white.opacity(0.7))
-        Text(event.title).font(TypeScale.heading).fixedSize(horizontal: false, vertical: true)
-        Text(event.city + " · " + event.venue).font(.subheadline).foregroundStyle(
-          .white.opacity(0.8))
-        HStack {
-          Text(event.statusLabel).font(.caption.weight(.semibold))
-          Spacer()
-          Image(systemName: "arrow.right").font(.subheadline)
-        }.padding(.top, 6)
-      }
-      VStack(spacing: 3) {
-        Text(event.monthLabel).font(.caption)
-        Text(event.dayLabel).font(TypeScale.title).monospacedDigit()
-        Text(event.weekdayLabel).font(.caption)
-      }.frame(width: 55).padding(.vertical, 10).background(
-        .white.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
-    }.foregroundStyle(.white).padding(24).frame(maxWidth: .infinity, alignment: .leading)
+    (typeSize.isAccessibilitySize
+      ? AnyLayout(VStackLayout(alignment: .leading, spacing: 16))
+      : AnyLayout(HStackLayout(alignment: .top, spacing: 16))) {
+        VStack(alignment: .leading, spacing: 12) {
+          Text(event.category + " 级赛事").font(.caption.weight(.semibold)).foregroundStyle(
+            .white.opacity(0.7))
+          Text(event.title).font(TypeScale.heading).fixedSize(horizontal: false, vertical: true)
+          Text(event.city + " · " + event.venue).font(.subheadline).foregroundStyle(
+            .white.opacity(0.8))
+          HStack {
+            Text(event.statusLabel).font(.caption.weight(.semibold))
+            Spacer()
+            Image(systemName: "arrow.right").font(.subheadline)
+          }.padding(.top, 6)
+        }
+        (typeSize.isAccessibilitySize
+          ? AnyLayout(HStackLayout(spacing: 12)) : AnyLayout(VStackLayout(spacing: 3))) {
+            Text(event.monthLabel).font(.caption)
+            Text(event.dayLabel).font(TypeScale.title).monospacedDigit()
+            Text(event.weekdayLabel).font(.caption)
+          }.fixedSize().frame(width: typeSize.isAccessibilitySize ? nil : 55).padding(.vertical, 10)
+          .background(
+            .white.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+      }.foregroundStyle(.white).padding(24).frame(maxWidth: .infinity, alignment: .leading)
       .background(Theme.navy, in: RoundedRectangle(cornerRadius: 16))
   }
 }

@@ -12,9 +12,11 @@ struct VideoLibraryView: View {
     NavigationStack {
       ScrollView {
         VStack(alignment: .leading, spacing: 24) {
-          HStack(spacing: 8) {
-            FilterChip(title: "官方回放", selected: !savedOnly) { savedOnly = false }
-            FilterChip(title: "我的收藏", selected: savedOnly) { savedOnly = true }
+          ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+              FilterChip(title: "官方回放", selected: !savedOnly) { savedOnly = false }
+              FilterChip(title: "我的收藏", selected: savedOnly) { savedOnly = true }
+            }
           }
           if (!savedOnly || saved)
             && (query.isEmpty || (title + "FAI 上海 回放").localizedCaseInsensitiveContains(query))

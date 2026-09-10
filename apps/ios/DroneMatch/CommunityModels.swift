@@ -68,6 +68,17 @@ struct PostDraft: Encodable {
 struct ApplicationDraft: Encodable {
   let message: String
   let teamId: String?
+  func validationMessage(for kind: PostKind) -> String? {
+    let length = message.trimmingCharacters(in: .whitespacesAndNewlines).utf16.count
+    if length < 2 {
+      return "请填写申请留言。"
+    }
+    if length > 500 { return "申请留言不能超过500字符。" }
+    if (kind == .friendly || kind == .seeking) && (teamId ?? "").isEmpty {
+      return "请选择对应的队伍。"
+    }
+    return nil
+  }
 }
 struct StateChange: Encodable { let status: String }
 struct Membership: Codable, Identifiable {

@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct EventsView: View {
+  @Environment(\.dynamicTypeSize) private var typeSize
   @EnvironmentObject private var store: AppStore
   @State private var search = ""
   @State private var category = "全部"
@@ -25,7 +26,9 @@ struct EventsView: View {
     NavigationStack {
       ScrollView {
         VStack(alignment: .leading, spacing: 0) {
-          HStack {
+          (typeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) : AnyLayout(HStackLayout()))
+          {
             Text("赛事").font(TypeScale.title)
             Spacer()
             Menu {
@@ -36,7 +39,7 @@ struct EventsView: View {
             } label: {
               HStack(spacing: 5) {
                 Image(systemName: "mappin.and.ellipse")
-                Text(city)
+                Text(city).fixedSize(horizontal: true, vertical: false)
                 Image(systemName: "chevron.down").font(TypeScale.caption)
               }
               .font(.subheadline).frame(minHeight: 44)
@@ -57,24 +60,29 @@ struct EventsView: View {
             }
           }.padding(.leading, 14).padding(.trailing, 4).frame(minHeight: 48)
             .background(Theme.background, in: RoundedRectangle(cornerRadius: 12))
-          HStack(spacing: 20) {
-            ForEach(["全部", "20cm", "40cm"], id: \.self) { value in
-              Button {
-                category = value
-                searching = false
-              } label: {
-                VStack(spacing: 8) {
-                  Text(value == "全部" ? "全部赛事" : value + " 级").font(
-                    .subheadline.weight(category == value ? .semibold : .regular))
-                  Capsule().fill(category == value ? Theme.accent : .clear).frame(height: 3)
-                }.padding(.top, 16)
-              }.foregroundStyle(category == value ? Theme.accent : .secondary)
-                .accessibilityAddTraits(category == value ? .isSelected : [])
+          ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 20) {
+              ForEach(["全部", "20cm", "40cm"], id: \.self) { value in
+                Button {
+                  category = value
+                  searching = false
+                } label: {
+                  VStack(spacing: 8) {
+                    Text(value == "全部" ? "全部赛事" : value + " 级").font(
+                      .subheadline.weight(category == value ? .semibold : .regular)
+                    ).fixedSize(horizontal: true, vertical: false)
+                    Capsule().fill(category == value ? Theme.accent : .clear).frame(height: 3)
+                  }.padding(.top, 16)
+                }.foregroundStyle(category == value ? Theme.accent : .secondary)
+                  .accessibilityAddTraits(category == value ? .isSelected : [])
+              }
+              Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
           }
           Divider()
-          HStack {
+          (typeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) : AnyLayout(HStackLayout()))
+          {
             Text("\(filtered.count) 场赛事").font(.caption).foregroundStyle(.secondary)
             Spacer()
             Button {

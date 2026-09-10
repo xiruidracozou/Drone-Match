@@ -513,6 +513,9 @@ struct CommunityApply: View {
   @State private var error: String?
   @State private var saved = false
   @State private var showTeam = false
+  private var draft: ApplicationDraft {
+    ApplicationDraft(message: message, teamId: teamId.isEmpty ? nil : teamId)
+  }
   var body: some View {
     NavigationStack {
       Form {
@@ -541,6 +544,9 @@ struct CommunityApply: View {
           Section("给发布人留言") {
             TextField("介绍经验、可参与时间或需要确认的事项", text: $message, axis: .vertical).lineLimit(4...8)
           }
+          if let hint = draft.validationMessage(for: post.type) {
+            Section { Text(hint).font(.footnote).foregroundStyle(.secondary) }
+          }
           if let error { Section { Text(error).foregroundStyle(.red) } }
           Section {
             Button {
@@ -552,7 +558,7 @@ struct CommunityApply: View {
                 Text("发送申请")
                 Spacer()
               }
-            }.disabled(busy)
+            }.disabled(busy || draft.validationMessage(for: post.type) != nil)
           }
         }
       }.sheet(isPresented: $showTeam) {
@@ -564,12 +570,8 @@ struct CommunityApply: View {
     }
   }
   private func apply() async {
-    guard message.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2 else {
-      error = "请填写申请留言。"
-      return
-    }
-    guard (post.type != .friendly && post.type != .seeking) || !teamId.isEmpty else {
-      error = "请选择对应的队伍。"
+    if let validation = draft.validationMessage(for: post.type) {
+      error = validation
       return
     }
     busy = true
@@ -577,8 +579,7 @@ struct CommunityApply: View {
     do {
       let _: CommunityApplication = try await store.communityRequest(
         "posts/\(post.id)/applications", method: "POST",
-        body: JSONEncoder().encode(
-          ApplicationDraft(message: message, teamId: teamId.isEmpty ? nil : teamId)))
+        body: JSONEncoder().encode(draft))
       saved = true
       await store.refresh()
     } catch { self.error = error.localizedDescription }
