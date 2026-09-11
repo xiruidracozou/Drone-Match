@@ -5,7 +5,8 @@ struct CommunityView: View {
   @State private var selected: PostKind
   @State private var posts: [CommunityPost] = []
   @State private var query = ""
-  @State private var city = "全国"
+  @AppStorage("selectedCity") private var city = "全国"
+  @State private var showCity = false
   @State private var category = "全部"
   @State private var openOnly = true
   @State private var hasMore = false
@@ -48,17 +49,8 @@ struct CommunityView: View {
           TextField("搜索标题或训练要求", text: $query).submitLabel(.search)
         }.padding(16).background(Theme.surface, in: RoundedRectangle(cornerRadius: 12))
         HStack {
-          Menu {
-            Picker("城市", selection: $city) {
-              Text("全国").tag("全国")
-              ForEach(
-                Array(
-                  Set(
-                    posts.map(\.city) + store.tournaments.map(\.city) + (city == "全国" ? [] : [city])
-                  )
-                ).sorted(), id: \.self
-              ) { Text($0).tag($0) }
-            }
+          Button {
+            showCity = true
           } label: {
             Label(city, systemImage: "mappin").frame(minHeight: 44)
           }
@@ -117,6 +109,7 @@ struct CommunityView: View {
         await load()
       } catch {}
     }.refreshable { await load() }
+    .sheet(isPresented: $showCity) { CitySelection() }
     .sheet(isPresented: $showLogin, onDismiss: { if store.account != nil { showCompose = true } }) {
       LoginView()
     }

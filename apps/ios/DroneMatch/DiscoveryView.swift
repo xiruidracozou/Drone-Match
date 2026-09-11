@@ -7,6 +7,9 @@ struct DiscoveryView: View {
   @State private var teams: [PublicTeam] = []
   @State private var organizations: [PublicOrganization] = []
   @State private var query = ""
+  @State private var showCity = false
+  @State private var showGuide = false
+  @FocusState private var searching: Bool
   @AppStorage("selectedCity") private var city = "全国"
   @State private var error: String?
   @State private var loading = true
@@ -29,12 +32,15 @@ struct DiscoveryView: View {
   var body: some View {
     NavigationStack {
       ScrollView {
-        VStack(alignment: .leading, spacing: 24) {
+        VStack(alignment: .leading, spacing: 20) {
           if term.isEmpty {
+            HomeHighlights(
+              suspended: showCity || showGuide || searching, onReplay: { store.selectedTab = 4 },
+              onGuide: { showGuide = true })
             LazyVGrid(
               columns: Array(
                 repeating: GridItem(.flexible(), spacing: 8),
-                count: typeSize.isAccessibilitySize ? 1 : 3), spacing: 16
+                count: typeSize.isAccessibilitySize ? 1 : 3), spacing: 12
             ) {
               ForEach(PostKind.allCases) { kind in
                 NavigationLink {
@@ -53,23 +59,24 @@ struct DiscoveryView: View {
               } label: {
                 ServiceShortcut(title: "俱乐部", icon: "building.2")
               }
-            }.buttonStyle(.plain).padding(.vertical, 8)
-            if let account = store.account {
+            }.buttonStyle(.plain).padding(.bottom, 4)
+            if store.account != nil && (store.unreadCount > 0 || pendingApplications > 0) {
               NavigationLink {
                 CommunityInbox()
               } label: {
                 HStack(spacing: 12) {
                   Image(systemName: "tray").foregroundStyle(Theme.accent)
                   VStack(alignment: .leading, spacing: 4) {
-                    Text(account.name + "，查看申请进展").font(TypeScale.body.weight(.semibold))
-                    Text(store.unreadCount > 0 ? "有新的留言，点此查看" : "招募、约赛与志愿活动记录").font(
+                    Text(store.unreadCount > 0 ? "你有新的活动留言" : "有申请等待处理").font(
+                      TypeScale.body.weight(.semibold))
+                    Text(store.unreadCount > 0 ? "查看申请与消息" : "\(pendingApplications) 条申请待处理").font(
                       TypeScale.caption
                     ).foregroundStyle(.secondary)
                   }
                   .frame(maxWidth: .infinity, alignment: .leading).layoutPriority(1)
                   UnreadBadge(count: store.unreadCount)
                   Image(systemName: "chevron.right").font(TypeScale.caption)
-                }.padding(16).background(Theme.surface, in: RoundedRectangle(cornerRadius: 12))
+                }.padding(12).background(Theme.surface, in: RoundedRectangle(cornerRadius: 12))
               }.buttonStyle(.plain)
             }
           }
@@ -79,7 +86,8 @@ struct DiscoveryView: View {
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) : AnyLayout(HStackLayout()))
           {
             SectionHeading(
-              title: term.isEmpty ? "近期可报名" : "赛事", subtitle: term.isEmpty ? "按比赛日期排列" : nil)
+              title: term.isEmpty ? (city == "全国" ? "近期赛事" : city + "赛事") : "赛事",
+              subtitle: term.isEmpty ? "近期可报名 · 按比赛日期" : nil)
             Button("全部") { store.selectedTab = 0 }.font(TypeScale.body).frame(minHeight: 44)
           }
           let shown = term.isEmpty ? events.filter(\.canRegister) : events
@@ -99,7 +107,16 @@ struct DiscoveryView: View {
           } else if store.isLoading {
             ProgressView("正在加载赛事").frame(maxWidth: .infinity)
           } else if store.error == nil {
-            EmptyPanel(title: "暂无符合条件的赛事", detail: "切换城市或前往赛事页查看其他安排。", icon: "calendar")
+            VStack(alignment: .leading, spacing: 8) {
+              Text("当地暂时没有可报名赛事").font(.subheadline).foregroundStyle(.secondary)
+              Button("换个城市看看") { showCity = true }.frame(minHeight: 44)
+            }
+          }
+          if term.isEmpty {
+            ForEach(HomePromotion.bundled.filter { $0.isVisible(in: city, at: Date()) }.prefix(1)) {
+              promotion in
+              HomePromotionSlot(promotion: promotion)
+            }
           }
           (typeSize.isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) : AnyLayout(HStackLayout()))
@@ -111,9 +128,11 @@ struct DiscoveryView: View {
           if loading {
             ProgressView("正在加载社区").frame(maxWidth: .infinity)
           } else if visiblePosts.isEmpty && error == nil {
-            EmptyPanel(title: "寻找一起训练的同伴", detail: "看看其他城市的招募，或发布你的训练安排。", icon: "person.2")
-            NavigationLink("浏览招募与约赛") { CommunityView(kind: .recruit) }.font(TypeScale.body).frame(
-              minHeight: 44)
+            VStack(alignment: .leading, spacing: 8) {
+              Text("当地还没有招募与约赛").font(.subheadline).foregroundStyle(.secondary)
+              NavigationLink("发布或寻找训练同伴") { CommunityView(kind: .recruit) }.font(TypeScale.body)
+                .frame(minHeight: 44)
+            }
           } else {
             ForEach(visiblePosts.prefix(term.isEmpty ? 3 : visiblePosts.count)) { post in
               NavigationLink {
@@ -175,43 +194,15 @@ struct DiscoveryView: View {
               }
             }.buttonStyle(.plain)
           }
-        }.padding(20).frame(maxWidth: 600)
+        }.padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 24).frame(maxWidth: 600)
       }.frame(maxWidth: .infinity).background(Theme.background)
-        .navigationTitle("无人机足球").navigationBarTitleDisplayMode(.inline)
-        .searchable(text: $query, prompt: "搜索赛事、队伍、机构、招募")
+        .scrollDismissesKeyboard(.interactively)
+        .safeAreaInset(edge: .top, spacing: 0) { header }
+        .toolbar(.hidden, for: .navigationBar)
+        .sheet(isPresented: $showCity) { CitySelection() }
+        .navigationDestination(isPresented: $showGuide) { EquipmentGuide() }
         .onChange(of: query) { _, value in
           if value.count > 80 { query = String(value.prefix(80)) }
-        }
-        .toolbar {
-          ToolbarItem(placement: .topBarLeading) {
-            Menu {
-              Picker("城市", selection: $city) {
-                Text("全国").tag("全国")
-                ForEach(
-                  Array(
-                    Set(
-                      store.tournaments.map(\.city) + teams.map(\.city) + posts.map(\.city)
-                        + (city == "全国" ? [] : [city]))
-                  )
-                  .sorted(), id: \.self
-                ) { Text($0).tag($0) }
-              }
-            } label: {
-              HStack(spacing: 4) {
-                Image(systemName: "location")
-                Text(city).lineLimit(1)
-              }.font(TypeScale.body).fixedSize(horizontal: true, vertical: false)
-                .accessibilityLabel("选择城市，当前" + city)
-            }
-          }
-          ToolbarItem(placement: .topBarTrailing) {
-            NavigationLink {
-              CommunityInbox()
-            } label: {
-              Image(systemName: store.unreadCount > 0 ? "envelope.badge" : "envelope")
-                .accessibilityLabel("申请与消息")
-            }
-          }
         }
         .task(id: term + "|" + city) {
           do {
@@ -223,6 +214,52 @@ struct DiscoveryView: View {
           await load()
         }
     }
+  }
+  private var pendingApplications: Int {
+    store.applications.filter { $0.authorId == store.account?.id && $0.status == "pending" }.count
+  }
+  private var header: some View {
+    VStack(spacing: 8) {
+      HStack(spacing: 8) {
+        Button {
+          searching = false
+          showCity = true
+        } label: {
+          HStack(spacing: 4) {
+            Image(systemName: "location.fill").font(.system(size: 16))
+            Text(city).font(.subheadline.weight(.semibold))
+              .lineLimit(typeSize.isAccessibilitySize ? 2 : 1)
+            Image(systemName: "chevron.down").font(.system(size: 12))
+          }.frame(minHeight: 44).foregroundStyle(.primary)
+        }.accessibilityLabel("选择位置，当前" + city)
+        if typeSize.isAccessibilitySize { Spacer(minLength: 0) } else { searchBar }
+        NavigationLink {
+          CommunityInbox()
+        } label: {
+          Image(systemName: store.unreadCount > 0 ? "envelope.badge" : "envelope")
+            .font(.system(size: 22)).frame(width: 44, height: 44)
+        }.accessibilityLabel("申请与消息")
+      }
+      if typeSize.isAccessibilitySize { searchBar }
+    }.padding(.horizontal, 16).padding(.vertical, 8).background(Theme.page)
+  }
+  private var searchBar: some View {
+    HStack(spacing: 8) {
+      Image(systemName: "magnifyingglass").font(.system(size: 18)).foregroundStyle(.secondary)
+      TextField("搜索赛事、俱乐部", text: $query).font(.subheadline)
+        .focused($searching).submitLabel(.search).onSubmit { searching = false }
+        .accessibilityLabel("搜索赛事、队伍、机构、招募")
+      if !query.isEmpty {
+        Button {
+          query = ""
+          searching = false
+        } label: {
+          Image(systemName: "xmark.circle.fill").font(.system(size: 18))
+            .foregroundStyle(.secondary).frame(width: 44, height: 44)
+        }.accessibilityLabel("清除搜索")
+      }
+    }.padding(.leading, 12).frame(minHeight: 44)
+      .background(Theme.background, in: RoundedRectangle(cornerRadius: 12))
   }
   private func load() async {
     loading = true
@@ -257,47 +294,28 @@ struct ServiceShortcut: View {
   let title, icon: String
   var body: some View {
     (typeSize.isAccessibilitySize
-      ? AnyLayout(HStackLayout(spacing: 16)) : AnyLayout(VStackLayout(spacing: 12))) {
-        Image(systemName: icon).font(.system(size: 25, weight: .medium)).foregroundStyle(
+      ? AnyLayout(HStackLayout(spacing: 16)) : AnyLayout(VStackLayout(spacing: 6))) {
+        Image(systemName: icon).font(.system(size: 22, weight: .medium)).foregroundStyle(
           Theme.accent
         )
-        .frame(height: 32)
+        .frame(width: 40, height: 40).background(
+          Theme.accent.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
         Text(title).font(.subheadline.weight(.medium)).foregroundStyle(.primary)
       }.frame(
-        maxWidth: .infinity, minHeight: 72,
+        maxWidth: .infinity, minHeight: 64,
         alignment: typeSize.isAccessibilitySize ? .leading : .center
       ).contentShape(Rectangle())
   }
 }
 struct FeaturedTournament: View {
-  @Environment(\.dynamicTypeSize) private var typeSize
   let event: Tournament
   var body: some View {
-    (typeSize.isAccessibilitySize
-      ? AnyLayout(VStackLayout(alignment: .leading, spacing: 16))
-      : AnyLayout(HStackLayout(alignment: .top, spacing: 16))) {
-        VStack(alignment: .leading, spacing: 12) {
-          Text(event.category + " 级赛事").font(.caption.weight(.semibold)).foregroundStyle(
-            .white.opacity(0.7))
-          Text(event.title).font(TypeScale.heading).fixedSize(horizontal: false, vertical: true)
-          Text(event.city + " · " + event.venue).font(.subheadline).foregroundStyle(
-            .white.opacity(0.8))
-          HStack {
-            Text(event.statusLabel).font(.caption.weight(.semibold))
-            Spacer()
-            Image(systemName: "arrow.right").font(.subheadline)
-          }.padding(.top, 6)
-        }
-        (typeSize.isAccessibilitySize
-          ? AnyLayout(HStackLayout(spacing: 12)) : AnyLayout(VStackLayout(spacing: 3))) {
-            Text(event.monthLabel).font(.caption)
-            Text(event.dayLabel).font(TypeScale.title).monospacedDigit()
-            Text(event.weekdayLabel).font(.caption)
-          }.fixedSize().frame(width: typeSize.isAccessibilitySize ? nil : 55).padding(.vertical, 10)
-          .background(
-            .white.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
-      }.foregroundStyle(.white).padding(24).frame(maxWidth: .infinity, alignment: .leading)
-      .background(Theme.navy, in: RoundedRectangle(cornerRadius: 16))
+    EventRow(event: event, showsMonth: true)
+      .padding(.horizontal, 16)
+      .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14))
+      .overlay(alignment: .leading) {
+        RoundedRectangle(cornerRadius: 2).fill(Theme.solidAccent).frame(width: 3, height: 32)
+      }
   }
 }
 struct EquipmentPhoto: View {

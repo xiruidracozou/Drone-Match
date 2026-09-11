@@ -46,6 +46,50 @@ struct ModelChecks {
     precondition(
       ApplicationDraft(message: String(repeating: "🚁", count: 251), teamId: "team")
         .validationMessage(for: .recruit) != nil, "字符长度应与服务端UTF16规则一致")
-    print("iOS model checks passed: registration states and application input boundaries")
+    let cityRows = try decoder.decode(
+      [BrowseCity].self,
+      from: Data(contentsOf: URL(fileURLWithPath: "apps/ios/DroneMatch/Media/Cities.json")))
+    let shanghai = cityRows.first { $0.name == "上海" }!
+    precondition(
+      shanghai.matches("浦东新区") && shanghai.matches("shanghai") && shanghai.matches("上海市"))
+    precondition(!shanghai.matches("hangzhou"))
+    precondition(cityRows.filter { $0.name == "上海" }.count == 1)
+    precondition(BrowseCity.normalized(" 上海市 ") == "上海")
+    precondition(BrowseCity.recent("杭州", previous: ["上海", "杭州", "全国"]) == ["杭州", "上海"])
+    precondition(BrowseCity.recent("全国", previous: ["杭州"]) == ["杭州"])
+    let promotionData = Data(
+      """
+      {"id":"test","title":"test","subtitle":"test","imageName":"DroneSoccer","city":"上海","startsAt":"2026-09-01T00:00:00Z","endsAt":"2026-10-01T00:00:00Z","destination":"https://example.com/event"}
+      """.utf8)
+    let promotion = try decoder.decode(HomePromotion.self, from: promotionData)
+    let active = ISO8601DateFormatter().date(from: "2026-09-11T00:00:00Z")!
+    precondition(promotion.isVisible(in: "上海", at: active))
+    precondition(
+      promotion.isVisible(in: "上海", at: ISO8601DateFormatter().date(from: promotion.startsAt)!))
+    let nationwide = try decoder.decode(
+      HomePromotion.self,
+      from: Data(
+        String(decoding: promotionData, as: UTF8.self).replacingOccurrences(of: "上海", with: "全国")
+          .utf8))
+    precondition(
+      nationwide.isVisible(in: "上海", at: active) && nationwide.isVisible(in: "全国", at: active))
+    precondition(!promotion.isVisible(in: "杭州", at: active))
+    precondition(!promotion.isVisible(in: "全国", at: active))
+    precondition(
+      !promotion.isVisible(in: "上海", at: ISO8601DateFormatter().date(from: promotion.endsAt)!))
+    precondition(
+      !promotion.isVisible(in: "上海", at: ISO8601DateFormatter().date(from: "2026-08-31T00:00:00Z")!)
+    )
+    let unsafe = try decoder.decode(
+      HomePromotion.self,
+      from: Data(
+        String(decoding: promotionData, as: UTF8.self).replacingOccurrences(
+          of: "https://", with: "javascript://"
+        ).utf8))
+    precondition(!unsafe.isVisible(in: "上海", at: active))
+    print(
+      "iOS model checks passed: registration/application boundaries, city search/history, promotion targeting and expiry"
+    )
+
   }
 }

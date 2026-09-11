@@ -4,12 +4,12 @@ struct EventsView: View {
   @Environment(\.dynamicTypeSize) private var typeSize
   @EnvironmentObject private var store: AppStore
   @State private var search = ""
+  @State private var showCity = false
   @State private var category = "全部"
   @AppStorage("selectedCity") private var city = "全国"
   @State private var openOnly = false
   @FocusState private var searching: Bool
 
-  private var cities: [String] { Array(Set(store.tournaments.map(\.city))).sorted() }
   private var filtered: [Tournament] {
     let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
     return store.tournaments.filter {
@@ -31,11 +31,8 @@ struct EventsView: View {
           {
             Text("赛事").font(TypeScale.title)
             Spacer()
-            Menu {
-              Picker("赛事城市", selection: $city) {
-                Text("全国").tag("全国")
-                ForEach(cities, id: \.self) { Text($0).tag($0) }
-              }
+            Button {
+              showCity = true
             } label: {
               HStack(spacing: 5) {
                 Image(systemName: "mappin.and.ellipse")
@@ -127,6 +124,7 @@ struct EventsView: View {
       .frame(maxWidth: .infinity).background(Theme.background)
       .scrollDismissesKeyboard(.interactively)
       .toolbar(.hidden, for: .navigationBar)
+      .sheet(isPresented: $showCity) { CitySelection() }
       .navigationDestination(for: Tournament.self) { TournamentDetail(initial: $0) }
       .refreshable { await store.refresh() }
     }
