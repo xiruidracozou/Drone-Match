@@ -149,6 +149,7 @@ struct AppSettingsView: View {
 }
 private struct FeedbackRecord: Decodable, Identifiable {
   let id, category, body, status, createdAt: String
+  let reply: String?
 }
 private struct FeedbackDraft: Encodable { let category, body: String }
 struct FeedbackView: View {
@@ -202,9 +203,15 @@ struct FeedbackView: View {
               HStack {
                 Text(row.category).font(TypeScale.heading)
                 Spacer()
-                Text("已保存").font(TypeScale.caption).foregroundStyle(Theme.accent)
+                Text(
+                  ["received": "待处理", "processing": "处理中", "resolved": "已解决"][row.status]
+                    ?? row.status
+                ).font(TypeScale.caption).foregroundStyle(Theme.accent)
               }
               Text(row.body).font(TypeScale.body)
+              if let reply = row.reply, !reply.isEmpty {
+                Text("平台回复：" + reply).font(TypeScale.body).foregroundStyle(Theme.accent)
+              }
               Text(Tournament.formatDate(row.createdAt)).font(TypeScale.caption).foregroundStyle(
                 .secondary)
             }.padding(.vertical, 8)

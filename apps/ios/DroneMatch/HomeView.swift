@@ -132,30 +132,5 @@ struct EventsView: View {
 }
 
 struct ParticipationGuide: View {
-  var body: some View {
-    List {
-      Section("报名流程") {
-        step("1", "准备队伍", "创建队伍并逐项填写名单，设备级别需要与赛事一致。")
-        step("2", "选择赛事", "确认时间、场地、报名截止和赛事规则。")
-        step("3", "提交报名", "选择队伍、核对当前名单并确认规则。提交后名单会保留为本次报名的快照。")
-        step("4", "查看审核", "在“我的报名”中查看处理进度和审核说明。审核通过表示获得参赛名额，不代表已实际出场。")
-      }
-      Section("名单修改") {
-        Text("队伍资料和人员名单可以在队伍详情中编辑。编辑只影响之后的报名，不改变已提交的名单。").font(.subheadline)
-      }
-      Section("当前版本") {
-        Text("仅使用虚构的成年演示资料。真实身份、监护关系和个人出场记录尚未接入。").font(TypeScale.caption).foregroundStyle(
-          .secondary)
-      }
-    }.navigationTitle("参赛指南").navigationBarTitleDisplayMode(.inline)
-  }
-  private func step(_ number: String, _ title: String, _ text: String) -> some View {
-    HStack(alignment: .top, spacing: 16) {
-      Text(number).font(.headline).foregroundStyle(Theme.accent).frame(width: 24)
-      VStack(alignment: .leading, spacing: 8) {
-        Text(title).font(.headline)
-        Text(text).font(.subheadline).foregroundStyle(.secondary).lineSpacing(3)
-      }
-    }.padding(.vertical, 10)
-  }
+  var body: some View { PublishedGuide(id: "participation") }
 }

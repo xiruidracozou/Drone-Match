@@ -41,13 +41,16 @@ struct CommunityPost: Codable, Identifiable, Hashable {
     venue, body, status, createdAt: String
   let teamId, teamName, startsAt: String?
   let applicationCount: Int
+  var hidden: Bool? = nil
+  var moderationReason: String? = nil
   var type: PostKind { PostKind(rawValue: kind) ?? .recruit }
   var statusLabel: String {
+    if hidden == true { return "已下架" }
     if status == "open" && !isOpen { return "已结束" }
     return ["open": "进行中", "matched": "已约定", "closed": "已关闭", "cancelled": "已取消"][status] ?? status
   }
   var isOpen: Bool {
-    status == "open"
+    hidden != true && status == "open"
       && (startsAt.flatMap { ISO8601DateFormatter().date(from: $0) ?? Tournament.dateFrom($0) }.map
       { $0 > Date() } ?? true)
   }

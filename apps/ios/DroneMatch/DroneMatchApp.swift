@@ -27,6 +27,7 @@ enum Theme {
 struct RootView: View {
   @EnvironmentObject private var store: AppStore
   @Environment(\.scenePhase) private var phase
+  @AppStorage("selectedCity") private var city = "全国"
   @AppStorage("appearance") private var appearance = "system"
   var body: some View {
     TabView(selection: $store.selectedTab) {
@@ -39,10 +40,11 @@ struct RootView: View {
       ).tag(2)
     }
     .preferredColorScheme(appearance == "light" ? .light : appearance == "dark" ? .dark : nil)
-    .task(id: phase) {
+    .task(id: String(describing: phase) + city) {
       guard phase == .active else { return }
       while !Task.isCancelled {
         await store.refresh()
+        await store.refreshContent(city: city)
         do { try await Task.sleep(for: .seconds(20)) } catch { return }
       }
     }

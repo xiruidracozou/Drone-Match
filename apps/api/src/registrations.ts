@@ -5,6 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import { capacityAvailable } from "./business-rules";
 import { Pool } from "pg";
 import { randomUUID } from "node:crypto";
 import { Actor, requireRole } from "./auth";
@@ -69,17 +70,7 @@ export class Registrations {
           message: "报名已被处理，请刷新后查看",
         });
       if (input.status === "approved") {
-        const count = (
-          await client.query(
-            `SELECT count(*)::int AS total FROM registrations WHERE tournament_id=$1 AND status='approved'`,
-            [tournament.id],
-          )
-        ).rows[0].total;
-        if (count >= tournament.capacity)
-          throw new ConflictException({
-            code: "DIVISION_FULL",
-            message: "最后一个名额已被占用",
-          });
+        await capacityAvailable(client, tournament.id, tournament.capacity);
       }
       await client.query(
         `UPDATE registrations SET status=$2,version=version+1,review_note=$3,reviewer_id=$4,reviewed_at=now() WHERE id=$1`,
@@ -140,6 +131,8 @@ export class Registrations {
         await client.query("COMMIT");
         return existing;
       }
+      if (tournament.hidden)
+        throw new ConflictException("赛事已下架，不接受新增报名");
       if (!tournament.open)
         throw new ConflictException({
           code: "REGISTRATION_CLOSED",
@@ -155,17 +148,7 @@ export class Registrations {
           code: "INVALID_ROSTER",
           message: "演示报名名单须为 1–10 人",
         });
-      const occupied = (
-        await client.query(
-          `SELECT count(*)::int AS total FROM registrations WHERE tournament_id=$1 AND status='approved'`,
-          [tournamentId],
-        )
-      ).rows[0].total;
-      if (occupied >= tournament.capacity)
-        throw new ConflictException({
-          code: "DIVISION_FULL",
-          message: "参赛名额已满",
-        });
+      await capacityAvailable(client, tournamentId, tournament.capacity);
       const id = randomUUID();
       await client.query(
         `INSERT INTO registrations(id,tournament_id,team_id,applicant_id,team_name,roster) VALUES($1,$2,$3,$4,$5,$6)`,

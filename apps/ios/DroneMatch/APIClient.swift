@@ -7,6 +7,10 @@ struct APIError: LocalizedError {
   var errorDescription: String? { message }
 }
 struct APIClient {
+  static func assetURL(_ id: String) -> URL? {
+    guard !id.isEmpty, let base = URL(string: Bundle.main.object(forInfoDictionaryKey: "APIBaseURL") as? String ?? "http://127.0.0.1:3001/api/v1") else { return nil }
+    return base.appendingPathComponent("content/assets").appendingPathComponent(id)
+  }
   private let baseURL = URL(
     string: Bundle.main.object(forInfoDictionaryKey: "APIBaseURL") as? String
       ?? "http://127.0.0.1:3001/api/v1")!

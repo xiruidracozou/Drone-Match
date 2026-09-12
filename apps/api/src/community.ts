@@ -49,7 +49,7 @@ const postInput = z
     if ((v.kind === "friendly" || v.kind === "volunteer") && v.venue.length < 2)
       c.addIssue({ code: "custom", message: "请填写场地", path: ["venue"] });
   });
-const selection = `SELECT p.id,p.author_id AS "authorId",a.name AS "authorName",o.name AS "organizationName",p.kind,p.title,p.city,p.category,p.level,p.availability,p.venue,p.body,p.team_id AS "teamId",t.name AS "teamName",p.starts_at AS "startsAt",p.status,p.created_at AS "createdAt",
+const selection = `SELECT p.id,p.author_id AS "authorId",a.name AS "authorName",o.name AS "organizationName",p.kind,p.title,p.hidden,p.moderation_reason AS "moderationReason",p.city,p.category,p.level,p.availability,p.venue,p.body,p.team_id AS "teamId",t.name AS "teamName",p.starts_at AS "startsAt",p.status,p.created_at AS "createdAt",
  (SELECT count(*)::int FROM community_applications ca WHERE ca.post_id=p.id AND ca.status IN ('pending','accepted')) AS "applicationCount"
  FROM community_posts p JOIN accounts a ON a.id=p.author_id JOIN organizations o ON o.id=a.organization_id LEFT JOIN teams t ON t.id=p.team_id`;
 const applicationSelection = `SELECT ca.id,ca.post_id AS "postId",ca.applicant_id AS "applicantId",a.name AS "applicantName",ca.team_id AS "teamId",t.name AS "teamName",ca.message,ca.status,ca.created_at AS "createdAt",p.author_id AS "authorId",p.title AS "postTitle",p.kind,p.status AS "postStatus",p.city,p.category
@@ -110,7 +110,7 @@ export class CommunityController {
     const owner = v.mine === "true" ? (await this.auth.actor(header)).id : "";
     return (
       await this.db.query(
-        `${selection} WHERE ($1='' OR p.kind=$1)
+        `${selection} WHERE (NOT p.hidden OR ($5<>'' AND p.author_id=$5)) AND ($1='' OR p.kind=$1)
       AND ($2='' OR p.title ILIKE $2 OR p.body ILIKE $2) AND ($3='' OR p.city=$3)
       AND ($4='' OR p.team_id=$4) AND ($5='' OR p.author_id=$5) AND ($6='' OR p.category=$6)
       AND ($7=false OR (p.status='open' AND (p.starts_at IS NULL OR p.starts_at>now())))
@@ -129,10 +129,31 @@ export class CommunityController {
       )
     ).rows;
   }
-  @Get("posts/:id") async detail(@Param("id") id: string) {
+  @Get("posts/:id") async detail(
+    @Param("id") id: string,
+    @Headers("authorization") header?: string,
+  ) {
     const row = (await this.db.query(`${selection} WHERE p.id=$1`, [id]))
       .rows[0];
     if (!row) throw missing();
+    if (row.hidden) {
+      let actor;
+      try {
+        actor = await this.auth.actor(header);
+      } catch {
+        throw missing();
+      }
+      if (
+        actor.id !== row.authorId &&
+        !(
+          await this.db.query(
+            "SELECT id FROM community_applications WHERE post_id=$1 AND applicant_id=$2",
+            [id, actor.id],
+          )
+        ).rowCount
+      )
+        throw missing();
+    }
     return row;
   }
   @Post("posts") async publish(
@@ -160,7 +181,7 @@ export class CommunityController {
         v.startsAt ?? null,
       ],
     );
-    return this.detail(id);
+    return this.detail(id, header);
   }
   @Patch("posts/:id") async close(
     @Param("id") id: string,
@@ -173,11 +194,11 @@ export class CommunityController {
         body,
       );
     const result = await this.db.query(
-      "UPDATE community_posts SET status=$3 WHERE id=$1 AND author_id=$2 RETURNING id",
+      "UPDATE community_posts SET status=$3,version=version+1 WHERE id=$1 AND author_id=$2 RETURNING id",
       [id, actor.id, v.status],
     );
     if (!result.rowCount) throw missing();
-    return this.detail(id);
+    return this.detail(id, header);
   }
   @Post("posts/:id/applications") async apply(
     @Param("id") id: string,
@@ -210,6 +231,7 @@ export class CommunityController {
           message: "不能申请自己发布的信息",
         });
       if (
+        p.hidden ||
         p.status !== "open" ||
         (p.starts_at && new Date(p.starts_at).getTime() <= Date.now())
       )
@@ -297,7 +319,8 @@ export class CommunityController {
       if (a.status !== "pending") throw conflict("申请已处理，请刷新查看");
       if (
         v.status !== "withdrawn" &&
-        (p.status !== "open" ||
+        (p.hidden ||
+          p.status !== "open" ||
           (p.starts_at && new Date(p.starts_at).getTime() <= Date.now()))
       )
         throw conflict("活动已结束或已关闭");
@@ -318,7 +341,7 @@ export class CommunityController {
         );
       if (v.status === "accepted" && p.kind === "friendly") {
         await client.query(
-          "UPDATE community_posts SET status='matched' WHERE id=$1",
+          "UPDATE community_posts SET status='matched',version=version+1 WHERE id=$1",
           [p.id],
         );
         await client.query(

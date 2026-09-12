@@ -17,27 +17,24 @@ struct HomeHighlights: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
   @ScaledMetric(relativeTo: .headline) private var height = 148.0
+  let items: [PublishedContent]
   let suspended: Bool
-  let onReplay, onGuide: () -> Void
+  let onSelect: (PublishedContent) -> Void
   @State private var page = 0
   @State private var paused = false
   @State private var touching = false
   @State private var visible = false
   @State private var nextRotation = Date().addingTimeInterval(6)
   private var rotating: Bool {
-    visible && phase == .active && !reduceMotion && !voiceOver && !paused && !suspended
+    items.count > 1 && visible && phase == .active && !reduceMotion && !voiceOver && !paused
+      && !suspended
   }
   var body: some View {
     VStack(spacing: 0) {
       TabView(selection: $page) {
-        highlight(
-          image: "DroneSoccerField", eyebrow: "赛事影像 · 全国", title: "感受空中对抗的魅力", action: "观看官方回放",
-          onTap: onReplay
-        ).tag(0)
-        highlight(
-          image: "DroneSoccer", eyebrow: "新手入门", title: "认识你的第一颗飞行球", action: "器材与参赛准备",
-          onTap: onGuide
-        ).tag(1)
+        ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+          highlight(item: item).tag(index)
+        }
       }.tabViewStyle(.page(indexDisplayMode: .never)).frame(height: height)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .simultaneousGesture(
@@ -51,10 +48,11 @@ struct HomeHighlights: View {
       (typeSize.isAccessibilitySize
         ? AnyLayout(VStackLayout(alignment: .leading, spacing: 0))
         : AnyLayout(HStackLayout(spacing: 0))) {
-          Text("项目实拍资料图").font(.caption2).foregroundStyle(.secondary)
+          Text(items.indices.contains(page) ? items[page].attribution : "").font(.caption2)
+            .foregroundStyle(.secondary)
           if !typeSize.isAccessibilitySize { Spacer() }
           HStack(spacing: 0) {
-            ForEach(0..<2) { index in
+            ForEach(0..<items.count, id: \.self) { index in
               Button {
                 withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.25)) { page = index }
               } label: {
@@ -63,7 +61,7 @@ struct HomeHighlights: View {
               }.accessibilityLabel("轮播第\(index + 1)页")
                 .accessibilityAddTraits(page == index ? .isSelected : [])
             }
-            if !reduceMotion && !voiceOver {
+            if items.count > 1 && !reduceMotion && !voiceOver {
               Button {
                 paused.toggle()
               } label: {
@@ -82,6 +80,7 @@ struct HomeHighlights: View {
       visible = false
       touching = false
     }
+    .onChange(of: items) { _, _ in page = 0 }
     .onChange(of: page) { _, _ in nextRotation = Date().addingTimeInterval(6) }
     .task(id: rotating) {
       guard rotating else { return }
@@ -89,49 +88,56 @@ struct HomeHighlights: View {
       while !Task.isCancelled {
         do { try await Task.sleep(for: .seconds(1)) } catch { return }
         if !touching && Date() >= nextRotation {
-          withAnimation(.easeInOut(duration: 0.35)) { page = (page + 1) % 2 }
+          withAnimation(.easeInOut(duration: 0.35)) { page = (page + 1) % items.count }
           nextRotation = Date().addingTimeInterval(6)
         }
       }
     }
   }
-  private func highlight(
-    image: String, eyebrow: String, title: String, action: String, onTap: @escaping () -> Void
-  ) -> some View {
-    Button(action: onTap) {
+  private func highlight(item: PublishedContent) -> some View {
+    Button {
+      onSelect(item)
+    } label: {
       ZStack(alignment: .leading) {
         GeometryReader { proxy in
-          HomePhoto(name: image).frame(width: proxy.size.width, height: proxy.size.height).clipped()
+          PublishedImage(assetId: item.assetId).frame(
+            width: proxy.size.width, height: proxy.size.height
+          ).clipped()
         }
         LinearGradient(
           colors: [Color.black.opacity(0.75), Color.black.opacity(0.3), .clear],
           startPoint: .leading, endPoint: .trailing)
         VStack(alignment: .leading, spacing: 8) {
-          Text(eyebrow).font(.caption.weight(.medium)).foregroundStyle(.white.opacity(0.85))
-          Text(title).font(.headline).fixedSize(horizontal: false, vertical: true)
-          Label(action, systemImage: "arrow.right.circle.fill").font(.caption.weight(.medium))
-            .padding(.top, 4)
+          Text(item.kind == "hero" ? "无人机足球" : "").font(.caption.weight(.medium)).foregroundStyle(
+            .white.opacity(0.85))
+          Text(item.title).font(.headline).fixedSize(horizontal: false, vertical: true)
+          Label(item.subtitle, systemImage: "arrow.right.circle.fill").font(
+            .caption.weight(.medium)
+          )
+          .padding(.top, 4)
         }.padding(20).foregroundStyle(.white)
       }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-    }.buttonStyle(.plain).accessibilityLabel(eyebrow + "，" + title + "，" + action)
+    }.buttonStyle(.plain).accessibilityLabel(item.title + "，" + item.subtitle)
   }
 }
 
 struct HomePromotionSlot: View {
-  let promotion: HomePromotion
+  let promotion: PublishedContent
   var body: some View {
-    Link(destination: promotion.destination) {
-      HStack(spacing: 16) {
-        HomePhoto(name: promotion.imageName).frame(width: 88, height: 72).clipped()
-          .clipShape(RoundedRectangle(cornerRadius: 8))
-        VStack(alignment: .leading, spacing: 6) {
-          Text(promotion.title).font(.headline).foregroundStyle(.primary)
-          Text(promotion.subtitle).font(.caption).foregroundStyle(.secondary)
-          Text("广告").font(.caption2).foregroundStyle(.secondary)
-        }
-        Spacer(minLength: 0)
-        Image(systemName: "arrow.up.right").font(.caption)
-      }.padding(12).background(Theme.surface, in: RoundedRectangle(cornerRadius: 12))
-    }.buttonStyle(.plain)
+    if let url = promotion.externalURL {
+      Link(destination: url) {
+        HStack(spacing: 16) {
+          PublishedImage(assetId: promotion.assetId).frame(width: 88, height: 72).clipped()
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+          VStack(alignment: .leading, spacing: 6) {
+            Text(promotion.title).font(.headline).foregroundStyle(.primary)
+            Text(promotion.subtitle).font(.caption).foregroundStyle(.secondary)
+            Text("广告").font(.caption2).foregroundStyle(.secondary)
+          }
+          Spacer(minLength: 0)
+          Image(systemName: "arrow.up.right").font(.caption)
+        }.padding(12).background(Theme.surface, in: RoundedRectangle(cornerRadius: 12))
+      }.buttonStyle(.plain)
+    }
   }
 }

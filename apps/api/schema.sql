@@ -92,3 +92,39 @@ CREATE TABLE IF NOT EXISTS matches (
     OR (status<>'final' AND home_score IS NULL AND away_score IS NULL))
 );
 CREATE INDEX IF NOT EXISTS matches_tournament ON matches(tournament_id,starts_at);
+
+CREATE TABLE IF NOT EXISTS platform_admins (
+ id text PRIMARY KEY, username text UNIQUE NOT NULL, password_hash text NOT NULL,
+ failed_attempts integer NOT NULL DEFAULT 0, locked_until timestamptz
+);
+CREATE TABLE IF NOT EXISTS platform_sessions (
+ token_hash text PRIMARY KEY, admin_id text NOT NULL REFERENCES platform_admins(id), expires_at timestamptz NOT NULL
+);
+CREATE TABLE IF NOT EXISTS platform_audit (
+ id text PRIMARY KEY, admin_id text NOT NULL REFERENCES platform_admins(id), action text NOT NULL,
+ resource_type text NOT NULL, resource_id text NOT NULL, reason text NOT NULL,
+ before_data jsonb, after_data jsonb, created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS platform_audit_resource ON platform_audit(resource_type,resource_id,created_at);
+CREATE TABLE IF NOT EXISTS platform_content (
+ id text PRIMARY KEY, kind text NOT NULL CHECK(kind IN ('hero','advert','guide','video')),
+ draft jsonb NOT NULL, published jsonb, version integer NOT NULL DEFAULT 1,
+ updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS platform_assets (
+ id text PRIMARY KEY, filename text NOT NULL, mime text NOT NULL, attribution text NOT NULL,
+ created_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS disabled boolean NOT NULL DEFAULT false;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS version integer NOT NULL DEFAULT 1;
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS version integer NOT NULL DEFAULT 1;
+ALTER TABLE teams ADD COLUMN IF NOT EXISTS version integer NOT NULL DEFAULT 1;
+ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS version integer NOT NULL DEFAULT 1;
+ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS hidden boolean NOT NULL DEFAULT false;
+ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS moderation_reason text NOT NULL DEFAULT '';
+ALTER TABLE community_posts ADD COLUMN IF NOT EXISTS version integer NOT NULL DEFAULT 1;
+ALTER TABLE community_posts ADD COLUMN IF NOT EXISTS hidden boolean NOT NULL DEFAULT false;
+ALTER TABLE community_posts ADD COLUMN IF NOT EXISTS moderation_reason text NOT NULL DEFAULT '';
+ALTER TABLE feedback ADD COLUMN IF NOT EXISTS reply text NOT NULL DEFAULT '';
+ALTER TABLE feedback ADD COLUMN IF NOT EXISTS version integer NOT NULL DEFAULT 1;
+ALTER TABLE registrations ADD COLUMN IF NOT EXISTS platform_reviewer_id text REFERENCES platform_admins(id);

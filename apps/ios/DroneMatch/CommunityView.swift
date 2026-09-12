@@ -211,6 +211,10 @@ struct CommunityDetail: View {
             Text(post.isOpen ? "进行中" : post.statusLabel)
           }.font(.subheadline)
           Text(post.title).font(TypeScale.title)
+          if post.hidden == true {
+            Text("平台已下架：" + (post.moderationReason ?? "")).font(.subheadline).foregroundStyle(
+              .secondary)
+          }
           HStack {
             ClubAvatar(name: post.teamName ?? post.authorName)
             VStack(alignment: .leading, spacing: 5) {

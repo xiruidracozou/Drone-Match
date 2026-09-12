@@ -1,3 +1,4 @@
+import { seedContent } from "./platform-content";
 import { Pool } from "pg";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -7,6 +8,7 @@ export const databaseURL = () =>
 
 export async function migrate(pool: Pool) {
   await pool.query(await readFile(resolve(__dirname, "../schema.sql"), "utf8"));
+  await seedContent(pool);
 }
 
 export async function seed(pool: Pool) {

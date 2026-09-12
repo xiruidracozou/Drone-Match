@@ -4,6 +4,23 @@ import Foundation
 struct ModelChecks {
   static func main() throws {
     let decoder = JSONDecoder()
+    let publishedRaw = """
+      {"id":"ad","kind":"advert","title":"测试","subtitle":"","body":"","city":"上海","assetId":"field-photo","attribution":"CC0","sourceURL":"","startsAt":null,"endsAt":"2099-01-01T00:00:00.000Z","sort":0,"action":{"type":"external","id":"","url":"https://example.com"}}
+      """
+    let content = try decoder.decode(PublishedContent.self, from: Data(publishedRaw.utf8))
+    precondition(content.visible(in: "上海") && !content.visible(in: "杭州"))
+    let pastContent = try decoder.decode(
+      PublishedContent.self,
+      from: Data(publishedRaw.replacingOccurrences(of: "2099", with: "2000").utf8))
+    precondition(!pastContent.visible(in: "上海"), "缓存广告到期后应隐藏")
+    precondition(content.externalURL != nil)
+    let unsafeContent = try decoder.decode(
+      PublishedContent.self,
+      from: Data(
+        publishedRaw.replacingOccurrences(of: "https://example.com", with: "javascript:alert(1)")
+          .utf8))
+    precondition(unsafeContent.externalURL == nil)
+
     let raw = """
       {"id":"event","title":"测试赛事","city":"上海","venue":"场馆","category":"20cm","startsAt":"2099-01-02T08:00:00.000Z","deadline":"2000-01-01T08:00:00.000Z","description":"说明","rules":"规则","status":"open","organizerName":"主办方","organizationId":"org","capacity":16,"approved":0}
       """
@@ -59,34 +76,34 @@ struct ModelChecks {
     precondition(BrowseCity.recent("全国", previous: ["杭州"]) == ["杭州"])
     let promotionData = Data(
       """
-      {"id":"test","title":"test","subtitle":"test","imageName":"DroneSoccer","city":"上海","startsAt":"2026-09-01T00:00:00Z","endsAt":"2026-10-01T00:00:00Z","destination":"https://example.com/event"}
+      {"id":"test","kind":"advert","title":"test","subtitle":"test","body":"","assetId":"field-photo","attribution":"CC0","sourceURL":"","sort":0,"city":"上海","startsAt":"2026-09-01T00:00:00Z","endsAt":"2026-10-01T00:00:00Z","action":{"type":"external","id":"","url":"https://example.com/event"}}
       """.utf8)
-    let promotion = try decoder.decode(HomePromotion.self, from: promotionData)
+    let promotion = try decoder.decode(PublishedContent.self, from: promotionData)
     let active = ISO8601DateFormatter().date(from: "2026-09-11T00:00:00Z")!
-    precondition(promotion.isVisible(in: "上海", at: active))
+    precondition(promotion.visible(in: "上海", at: active))
     precondition(
-      promotion.isVisible(in: "上海", at: ISO8601DateFormatter().date(from: promotion.startsAt)!))
+      promotion.visible(in: "上海", at: ISO8601DateFormatter().date(from: promotion.startsAt!)!))
     let nationwide = try decoder.decode(
-      HomePromotion.self,
+      PublishedContent.self,
       from: Data(
         String(decoding: promotionData, as: UTF8.self).replacingOccurrences(of: "上海", with: "全国")
           .utf8))
     precondition(
-      nationwide.isVisible(in: "上海", at: active) && nationwide.isVisible(in: "全国", at: active))
-    precondition(!promotion.isVisible(in: "杭州", at: active))
-    precondition(!promotion.isVisible(in: "全国", at: active))
+      nationwide.visible(in: "上海", at: active) && nationwide.visible(in: "全国", at: active))
+    precondition(!promotion.visible(in: "杭州", at: active))
+    precondition(!promotion.visible(in: "全国", at: active))
     precondition(
-      !promotion.isVisible(in: "上海", at: ISO8601DateFormatter().date(from: promotion.endsAt)!))
+      !promotion.visible(in: "上海", at: ISO8601DateFormatter().date(from: promotion.endsAt!)!))
     precondition(
-      !promotion.isVisible(in: "上海", at: ISO8601DateFormatter().date(from: "2026-08-31T00:00:00Z")!)
+      !promotion.visible(in: "上海", at: ISO8601DateFormatter().date(from: "2026-08-31T00:00:00Z")!)
     )
     let unsafe = try decoder.decode(
-      HomePromotion.self,
+      PublishedContent.self,
       from: Data(
         String(decoding: promotionData, as: UTF8.self).replacingOccurrences(
           of: "https://", with: "javascript://"
         ).utf8))
-    precondition(!unsafe.isVisible(in: "上海", at: active))
+    precondition(!unsafe.visible(in: "上海", at: active))
     print(
       "iOS model checks passed: registration/application boundaries, city search/history, promotion targeting and expiry"
     )

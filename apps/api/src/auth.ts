@@ -51,7 +51,7 @@ export class Auth {
     const row = (
       await this.db.query(
         `${actorSelect} JOIN sessions s ON s.account_id=a.id
-      WHERE s.token_hash=$1 AND s.expires_at > now()`,
+      WHERE s.token_hash=$1 AND s.expires_at > now() AND NOT a.disabled`,
         [tokenHash(token)],
       )
     ).rows[0];
@@ -64,7 +64,9 @@ export class Auth {
   }
   async session(accountId: string) {
     const account = (
-      await this.db.query(`${actorSelect} WHERE a.id=$1`, [accountId])
+      await this.db.query(`${actorSelect} WHERE a.id=$1 AND NOT a.disabled`, [
+        accountId,
+      ])
     ).rows[0];
     if (!account)
       throw new UnauthorizedException({

@@ -11,12 +11,14 @@ import {
   Post,
   Put,
 } from "@nestjs/common";
+import { tournamentReadable } from "./visibility";
+import { matchRules } from "./business-rules";
 import { Pool } from "pg";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { Auth, parse, requireRole } from "./auth";
 
-const fields = {
+export const matchFields = {
   homeRegistrationId: z.string().min(1).max(100),
   awayRegistrationId: z.string().min(1).max(100),
   startsAt: z.iso.datetime(),
@@ -28,8 +30,8 @@ const fields = {
   awayScore: z.number().int().min(0).max(999).nullable().default(null),
   note: z.string().trim().max(1000),
 };
-const shape = z.object(fields).strict();
-const valid = (v: z.infer<typeof shape>) =>
+const shape = z.object(matchFields).strict();
+export const validMatch = (v: z.infer<typeof shape>) =>
   v.homeRegistrationId !== v.awayRegistrationId &&
   Date.parse(v.endsAt) > Date.parse(v.startsAt) &&
   (v.status === "final"
@@ -44,7 +46,11 @@ export class MatchesController {
     @Inject("DB") private readonly db: Pool,
     private readonly auth: Auth,
   ) {}
-  @Get() async list(@Param("tournamentId") tournamentId: string) {
+  @Get() async list(
+    @Param("tournamentId") tournamentId: string,
+    @Headers("authorization") header?: string,
+  ) {
+    await tournamentReadable(this.db, this.auth, tournamentId, header);
     if (
       !(
         await this.db.query("SELECT id FROM tournaments WHERE id=$1", [
@@ -95,9 +101,9 @@ export class MatchesController {
     }
     const v = parse(
       z
-        .object({ ...fields, version: z.number().int().min(1).optional() })
+        .object({ ...matchFields, version: z.number().int().min(1).optional() })
         .strict()
-        .refine(valid, { message: "请核对队伍、起止时间及比分" }),
+        .refine(validMatch, { message: "请核对队伍、起止时间及比分" }),
       body,
     );
     const client = await this.db.connect();
@@ -119,29 +125,7 @@ export class MatchesController {
             message: "赛程已更新，请刷新后再修改",
           });
       }
-      const teams = await client.query(
-        "SELECT id FROM registrations WHERE tournament_id=$1 AND status='approved' AND id=ANY($2::text[])",
-        [tournamentId, [v.homeRegistrationId, v.awayRegistrationId]],
-      );
-      if (teams.rowCount !== 2)
-        throw new ConflictException({ message: "请选择两支已通过审核的队伍" });
-      if (v.status !== "cancelled") {
-        const collision = await client.query(
-          `SELECT id FROM matches WHERE tournament_id=$1 AND id<>$2 AND status<>'cancelled' AND starts_at<$4 AND ends_at>$3 AND (venue=$5 OR home_registration_id=ANY($6::text[]) OR away_registration_id=ANY($6::text[]))`,
-          [
-            tournamentId,
-            id ?? "",
-            v.startsAt,
-            v.endsAt,
-            v.venue,
-            [v.homeRegistrationId, v.awayRegistrationId],
-          ],
-        );
-        if (collision.rowCount)
-          throw new ConflictException({
-            message: "该时段的队伍或场地已有比赛，请调整时间",
-          });
-      }
+      await matchRules(client, tournamentId, id, v);
       const matchId = id ?? randomUUID();
       const values = [
         matchId,

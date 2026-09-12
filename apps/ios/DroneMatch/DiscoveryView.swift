@@ -8,7 +8,7 @@ struct DiscoveryView: View {
   @State private var organizations: [PublicOrganization] = []
   @State private var query = ""
   @State private var showCity = false
-  @State private var showGuide = false
+  @State private var destination: PublishedContent?
   @FocusState private var searching: Bool
   @AppStorage("selectedCity") private var city = "全国"
   @State private var error: String?
@@ -34,9 +34,19 @@ struct DiscoveryView: View {
       ScrollView {
         VStack(alignment: .leading, spacing: 20) {
           if term.isEmpty {
-            HomeHighlights(
-              suspended: showCity || showGuide || searching, onReplay: { store.selectedTab = 4 },
-              onGuide: { showGuide = true })
+            ContentSyncNotice()
+            let highlights = store.content.filter { $0.kind == "hero" && $0.visible(in: city) }
+            if !highlights.isEmpty {
+              HomeHighlights(
+                items: highlights, suspended: showCity || destination != nil || searching
+              ) { item in
+                if item.action.type == "video" {
+                  store.selectedTab = 4
+                } else if item.action.type != "none" {
+                  destination = item
+                }
+              }
+            }
             LazyVGrid(
               columns: Array(
                 repeating: GridItem(.flexible(), spacing: 8),
@@ -113,7 +123,8 @@ struct DiscoveryView: View {
             }
           }
           if term.isEmpty {
-            ForEach(HomePromotion.bundled.filter { $0.isVisible(in: city, at: Date()) }.prefix(1)) {
+            ForEach(store.content.filter { $0.kind == "advert" && $0.visible(in: city) }.prefix(1))
+            {
               promotion in
               HomePromotionSlot(promotion: promotion)
             }
@@ -178,17 +189,20 @@ struct DiscoveryView: View {
             if !loading && error == nil && foundTeams.isEmpty && foundOrgs.isEmpty {
               Text("没有匹配的队伍或机构").font(TypeScale.body).foregroundStyle(.secondary)
             }
-          } else {
+          } else if let guide = store.content.first(where: {
+            $0.id == "equipment" && $0.kind == "guide" && $0.visible(in: city)
+          }) {
             SectionHeading(title: "认识这项运动")
             NavigationLink {
               EquipmentGuide()
             } label: {
               HStack(spacing: 16) {
-                EquipmentPhoto().frame(width: 104, height: 88).clipped().clipShape(
-                  RoundedRectangle(cornerRadius: 12))
+                PublishedImage(assetId: guide.assetId).frame(width: 104, height: 88).clipped()
+                  .clipShape(
+                    RoundedRectangle(cornerRadius: 12))
                 VStack(alignment: .leading, spacing: 8) {
-                  Text("无人机足球入门").font(TypeScale.heading)
-                  Text("器材、场地与参赛准备").font(TypeScale.body).foregroundStyle(.secondary)
+                  Text(guide.title).font(TypeScale.heading)
+                  Text(guide.subtitle).font(TypeScale.body).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
               }
@@ -200,7 +214,7 @@ struct DiscoveryView: View {
         .safeAreaInset(edge: .top, spacing: 0) { header }
         .toolbar(.hidden, for: .navigationBar)
         .sheet(isPresented: $showCity) { CitySelection() }
-        .navigationDestination(isPresented: $showGuide) { EquipmentGuide() }
+        .navigationDestination(item: $destination) { ContentDestination(content: $0) }
         .onChange(of: query) { _, value in
           if value.count > 80 { query = String(value.prefix(80)) }
         }
@@ -210,6 +224,7 @@ struct DiscoveryView: View {
             await load()
           } catch {}
         }.refreshable {
+          await store.refreshContent(city: city)
           await store.refresh()
           await load()
         }
@@ -318,47 +333,10 @@ struct FeaturedTournament: View {
       }
   }
 }
-struct EquipmentPhoto: View {
-  var body: some View {
-    if let path = Bundle.main.url(
-      forResource: "DroneSoccer", withExtension: "jpg", subdirectory: "Media"),
-      let image = UIImage(contentsOfFile: path.path)
-    {
-      Image(uiImage: image).resizable().scaledToFill().accessibilityLabel("真实的不同尺寸无人机足球设备")
-    }
-  }
-}
 struct EquipmentGuide: View {
-  var body: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: 24) {
-        EquipmentPhoto().frame(height: 240).clipped()
-        VStack(alignment: .leading, spacing: 16) {
-          Text("认识你的第一颗飞行球").font(TypeScale.title)
-          Text("无人机足球让两支队伍在网笼内协作对抗。球形保护罩包裹无人机，飞手在场外操纵，指定进攻球穿过对方球门得分。具体人数、器材和计分方式以所参加赛事的规程为准。").font(
-            .body
-          ).lineSpacing(6)
-          Text("先确认三件事").font(TypeScale.heading)
-          Label("赛事要求的设备级别", systemImage: "checkmark.circle")
-          Label("适合训练的封闭场地", systemImage: "checkmark.circle")
-          Label("队伍名单与现场组织方式", systemImage: "checkmark.circle")
-          NavigationLink("查看参赛准备流程") { ParticipationGuide() }.frame(minHeight: 44)
-          Link(
-            "查看 FAI 无人机足球介绍",
-            destination: URL(
-              string: "https://www.fai.org/event/2026-fai-drone-soccer-international-series")!)
-          Text("图片：A7N8X / Wikimedia Commons，CC0。设备实拍，非本平台赛事现场。").font(.caption).foregroundStyle(
-            .secondary)
-          Link(
-            "图片来源与许可",
-            destination: URL(
-              string: "https://commons.wikimedia.org/wiki/File:Drone_soccer_in_diverse_taglie.jpg")!
-          ).font(.caption)
-        }.padding(.horizontal, 20)
-      }.padding(.bottom, 30)
-    }.navigationTitle("入门指南").navigationBarTitleDisplayMode(.inline)
-  }
+  var body: some View { PublishedGuide(id: "equipment") }
 }
+
 struct InlineFailure: View {
   let message: String
   let retry: () -> Void

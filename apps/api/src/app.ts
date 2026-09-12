@@ -1,4 +1,8 @@
 import "reflect-metadata";
+import { tournamentReadable } from "./visibility";
+import { PlatformController } from "./platform";
+import { ContentController } from "./platform-content";
+import { PlatformAuth, PlatformSessionController } from "./platform-auth";
 import { MatchesController, matchSelect } from "./matches";
 import { CommunityController } from "./community";
 import {
@@ -25,7 +29,7 @@ import { randomUUID } from "node:crypto";
 import { demoRules, teamInput, tournamentInput } from "./validation";
 
 const tournamentSelect = `SELECT t.id,t.title,t.city,t.venue,t.category,t.starts_at AS "startsAt",t.deadline,
-  t.capacity,t.description,t.rules,o.name AS "organizerName",t.organization_id AS "organizationId",
+  t.capacity,t.description,t.rules,t.hidden,t.moderation_reason AS "moderationReason",o.name AS "organizerName",t.organization_id AS "organizationId",
   (SELECT count(*)::int FROM registrations r WHERE r.tournament_id=t.id AND r.status='approved') AS approved,
   CASE WHEN t.deadline <= now() THEN 'closed' ELSE 'open' END AS status
   FROM tournaments t JOIN organizations o ON o.id=t.organization_id`;
@@ -66,10 +70,10 @@ class ApiController {
       z.object({ name: z.string().trim().min(2).max(40) }).strict(),
       body,
     );
-    await this.db.query("UPDATE accounts SET name=$2 WHERE id=$1", [
-      actor.id,
-      v.name,
-    ]);
+    await this.db.query(
+      "UPDATE accounts SET name=$2,version=version+1 WHERE id=$1",
+      [actor.id, v.name],
+    );
     return this.auth.actor(header);
   }
   @Get("me/matches") async myMatches(
@@ -88,7 +92,7 @@ class ApiController {
     const actor = await this.auth.actor(header);
     return (
       await this.db.query(
-        'SELECT id,category,body,status,created_at AS "createdAt" FROM feedback WHERE account_id=$1 ORDER BY created_at DESC',
+        'SELECT id,category,body,status,reply,created_at AS "createdAt" FROM feedback WHERE account_id=$1 ORDER BY created_at DESC',
         [actor.id],
       )
     ).rows;
@@ -116,8 +120,9 @@ class ApiController {
   }
   @Get("tournaments/:id/participants") async participants(
     @Param("id") id: string,
+    @Headers("authorization") header?: string,
   ) {
-    await this.tournament(id);
+    await this.tournament(id, header);
     return (
       await this.db.query(
         `SELECT r.id,r.team_id AS "teamId",r.team_name AS name,t.city,t.category,o.name AS "organizationName" FROM registrations r JOIN teams t ON t.id=r.team_id JOIN organizations o ON o.id=t.organization_id WHERE r.tournament_id=$1 AND r.status='approved' ORDER BY r.reviewed_at,r.id`,
@@ -175,7 +180,7 @@ class ApiController {
     requireRole(actor, "captain");
     const value = parse(teamInput, body);
     const result = await this.db.query(
-      `UPDATE teams SET name=$3,city=$4,category=$5,roster=$6
+      `UPDATE teams SET version=version+1,name=$3,city=$4,category=$5,roster=$6
        WHERE id=$1 AND owner_id=$2 RETURNING id,name,city,category,roster`,
       [
         id,
@@ -279,12 +284,16 @@ class ApiController {
   @Get("tournaments") async tournaments(@Query("q") q = "") {
     return (
       await this.db.query(
-        `${tournamentSelect} WHERE t.title ILIKE $1 OR t.city ILIKE $1 ORDER BY t.starts_at`,
+        `${tournamentSelect} WHERE NOT t.hidden AND (t.title ILIKE $1 OR t.city ILIKE $1) ORDER BY t.starts_at`,
         [`%${q.slice(0, 100)}%`],
       )
     ).rows;
   }
-  @Get("tournaments/:id") async tournament(@Param("id") id: string) {
+  @Get("tournaments/:id") async tournament(
+    @Param("id") id: string,
+    @Headers("authorization") header?: string,
+  ) {
+    await tournamentReadable(this.db, this.auth, id, header);
     const row = (await this.db.query(`${tournamentSelect} WHERE t.id=$1`, [id]))
       .rows[0];
     if (!row)
@@ -297,16 +306,28 @@ export async function createApplication(pool: Pool, demoMode = false) {
   if (demoMode && process.env.NODE_ENV === "production")
     throw new Error("Demo authentication is forbidden in production");
   @Module({
-    controllers: [ApiController, CommunityController, MatchesController],
+    controllers: [
+      ApiController,
+      CommunityController,
+      MatchesController,
+      PlatformSessionController,
+      ContentController,
+      PlatformController,
+    ],
     providers: [
       Auth,
+      PlatformAuth,
       Registrations,
       { provide: "DB", useValue: pool },
       { provide: "DEMO", useValue: demoMode },
     ],
   })
   class AppModule {}
-  const app = await NestFactory.create(AppModule, { logger: false });
+  const app = await NestFactory.create(AppModule, {
+    logger: false,
+    bodyParser: false,
+  });
+  app.use(require("express").json({ limit: "15mb" }));
   app.setGlobalPrefix("api/v1");
   app.enableCors({
     origin: ["http://127.0.0.1:5173", "http://localhost:5173"],

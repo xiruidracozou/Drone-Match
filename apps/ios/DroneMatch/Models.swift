@@ -4,11 +4,13 @@ struct Tournament: Codable, Identifiable, Hashable {
   let id, title, city, venue, category, startsAt, deadline, description, rules, status,
     organizerName, organizationId: String
   let capacity, approved: Int
+  var hidden: Bool? = nil
+  var moderationReason: String? = nil
   var registrationExpired: Bool {
     (Self.dateFrom(deadline) ?? ISO8601DateFormatter().date(from: deadline)).map { $0 <= Date() }
       ?? true
   }
-  var canRegister: Bool { status == "open" && !registrationExpired && approved < capacity }
+  var canRegister: Bool { hidden != true && status == "open" && !registrationExpired && approved < capacity }
   var date: Date? {
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -29,7 +31,7 @@ struct Tournament: Codable, Identifiable, Hashable {
       ?? ""
   }
   var statusLabel: String {
-    canRegister ? "报名中" : (status == "closed" || registrationExpired) ? "报名截止" : "名额已满"
+    hidden == true ? "已下架" : canRegister ? "报名中" : (status == "closed" || registrationExpired) ? "报名截止" : "名额已满"
   }
   var dateLabel: String { Self.formatDate(startsAt) }
   static func formatDate(_ value: String) -> String {

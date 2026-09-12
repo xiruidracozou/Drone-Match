@@ -1,1028 +1,953 @@
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
-  Alert,
   App as AntApp,
+  ConfigProvider,
+  Alert,
   Avatar,
   Button,
-  Checkbox,
-  ConfigProvider,
-  DatePicker,
+  Drawer,
   Empty,
   Form,
   Input,
-  InputNumber,
-  Modal,
+  Menu,
   Select,
+  Space,
   Spin,
   Table,
   Tag,
+  Tabs,
 } from "antd";
 import zhCN from "antd/locale/zh_CN";
 import {
-  ArrowRightOutlined,
-  CheckCircleOutlined,
-  ClockCircleOutlined,
-  EnvironmentOutlined,
-  LogoutOutlined,
-  PlusOutlined,
-  ReloadOutlined,
-  SearchOutlined,
-  TeamOutlined,
-  ThunderboltOutlined,
-  TrophyOutlined,
-  UnorderedListOutlined,
   AppstoreOutlined,
+  PictureOutlined,
+  TrophyOutlined,
+  TeamOutlined,
+  CalendarOutlined,
+  AuditOutlined,
+  MessageOutlined,
+  UserOutlined,
+  ApartmentOutlined,
+  FileTextOutlined,
+  LogoutOutlined,
+  MenuOutlined,
+  ReloadOutlined,
+  PlusOutlined,
+  SearchOutlined,
 } from "@ant-design/icons";
+import { api, APIError } from "./api";
 import {
-  Account,
-  APIError,
-  api,
-  date,
-  Registration,
-  statusText,
-  Team,
-  Tournament,
-} from "./api";
+  Row,
+  titles,
+  kinds,
+  statuses,
+  display,
+  labels,
+} from "./platform-model";
+import { MutationForm, ReasonAction, RecordDetails } from "./platform-ui";
+import { ContentEditor, ContentPreview } from "./content-editor";
 import "./styles.css";
-
-function App() {
-  const { message } = AntApp.useApp();
+const icons = [
+  <AppstoreOutlined />,
+  <PictureOutlined />,
+  <TrophyOutlined />,
+  <AuditOutlined />,
+  <CalendarOutlined />,
+  <ApartmentOutlined />,
+  <TeamOutlined />,
+  <MessageOutlined />,
+  <UserOutlined />,
+  <MessageOutlined />,
+  <FileTextOutlined />,
+];
+const navigation = Object.entries(titles).map(([key, label], i) => ({
+  key,
+  label,
+  icon: icons[i],
+}));
+const resourceFromHash = () =>
+  Object.hasOwn(titles, location.hash.slice(1))
+    ? location.hash.slice(1)
+    : "overview";
+function PlatformApp() {
   const [token, setToken] = useState(
-    sessionStorage.getItem("drone-match-token") || "",
-  );
-  const [account, setAccount] = useState<Account | null>(null);
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [events, setEvents] = useState<Tournament[]>([]);
-  const [registrations, setRegistrations] = useState<Registration[]>([]);
-  const [teams, setTeams] = useState<Team[]>([]);
-  const [tab, setTab] = useState("overview");
-  const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState("all");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [revision, setRevision] = useState(0);
-  const [busy, setBusy] = useState(false);
-  const [modal, setModal] = useState<"event" | "team" | null>(null);
-  const [detail, setDetail] = useState<Tournament | null>(null);
-  const [review, setReview] = useState<Registration | null>(null);
-  const [reviewStatus, setReviewStatus] = useState<"approved" | "rejected">(
-    "approved",
-  );
-  const [note, setNote] = useState("");
-  const [form] = Form.useForm();
-  const [registrationForm] = Form.useForm();
-  const organizer = account?.role === "organizer";
+      sessionStorage.getItem("platform-token") || "",
+    ),
+    [account, setAccount] = useState<Row | null>(null),
+    [resource, setResource] = useState(resourceFromHash),
+    [navOpen, setNavOpen] = useState(false),
+    [rows, setRows] = useState<Row[]>([]),
+    [total, setTotal] = useState(0),
+    [page, setPage] = useState(1),
+    [query, setQuery] = useState(""),
+    [status, setStatus] = useState(""),
+    [parent, setParent] = useState(""),
+    [revision, setRevision] = useState(0),
+    [loading, setLoading] = useState(false),
+    [error, setError] = useState(""),
+    [lookups, setLookups] = useState<Row>({}),
+    [overview, setOverview] = useState<Row>({}),
+    [selected, setSelected] = useState<Row | null>(null),
+    [editing, setEditing] = useState(false),
+    [related, setRelated] = useState<Row[]>([]),
+    [members, setMembers] = useState<Row[]>([]),
+    [conversation, setConversation] = useState<Row | null>(null);
   const refresh = () => setRevision((n) => n + 1);
-  useEffect(() => {
-    let current = true;
-    setLoading(true);
+  const navigate = (key: string) => {
+    history.pushState({}, "", "#" + key);
+    setResource(key);
+    setQuery("");
+    setStatus("");
+    setParent("");
+    setPage(1);
+    setSelected(null);
+    setEditing(false);
+    setNavOpen(false);
     setError("");
-    async function load() {
-      if (!token) {
-        const rows = await api<Account[]>("/dev/accounts");
-        if (current) {
-          setAccounts(rows);
-          setAccount(null);
-        }
-        return;
-      }
-      const me = await api<Account>("/me", token);
-      const [ev, reg, tm] = await Promise.all([
-        api<Tournament[]>(
-          me.role === "organizer" ? "/admin/tournaments" : "/tournaments",
-          token,
-        ),
-        api<Registration[]>("/registrations", token),
-        api<Team[]>("/teams", token),
-      ]);
-      if (current) {
-        setAccount(me);
-        setEvents(ev);
-        setRegistrations(reg);
-        setTeams(tm);
-      }
-    }
-    load()
-      .catch((e) => {
-        if (current) {
-          setError(e.message);
-          if (e instanceof APIError && e.status === 401) {
-            sessionStorage.removeItem("drone-match-token");
-            setToken("");
-            setAccount(null);
-          }
-        }
-      })
-      .finally(() => {
-        if (current) setLoading(false);
-      });
-    return () => {
-      current = false;
+  };
+  useEffect(() => {
+    const handler = () => {
+      setResource(resourceFromHash());
+      setSelected(null);
+      setPage(1);
+      setQuery("");
+      setStatus("");
+      setParent("");
     };
-  }, [token, revision]);
-  async function login(id: string) {
-    setBusy(true);
-    try {
-      const result = await api<{ token: string; account: Account }>(
-        "/dev/sessions",
-        "",
-        "POST",
-        { accountId: id },
-      );
-      sessionStorage.setItem("drone-match-token", result.token);
-      setToken(result.token);
-      setTab("overview");
-    } catch (e) {
-      message.error((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-  async function logout() {
-    setBusy(true);
-    try {
-      await api("/auth/session", token, "DELETE");
-      sessionStorage.removeItem("drone-match-token");
+    window.addEventListener("hashchange", handler);
+    window.addEventListener("popstate", handler);
+    return () => {
+      window.removeEventListener("hashchange", handler);
+      window.removeEventListener("popstate", handler);
+    };
+  }, []);
+  const fail = (e: Error) => {
+    setError(e.message);
+    if (e instanceof APIError && e.status === 401) {
+      sessionStorage.removeItem("platform-token");
       setToken("");
       setAccount(null);
-      setEvents([]);
-      setRegistrations([]);
-      setTeams([]);
-      setDetail(null);
-      setReview(null);
-      setModal(null);
-    } catch (e) {
-      message.error((e as Error).message);
-    } finally {
-      setBusy(false);
+      setRows([]);
+      setSelected(null);
+      setConversation(null);
     }
-  }
-  function openModal(kind: "event" | "team") {
-    form.resetFields();
-    setModal(kind);
-  }
-  async function create(values: Record<string, unknown>) {
-    setBusy(true);
-    try {
-      if (modal === "event") {
-        await api("/admin/tournaments", token, "POST", {
-          ...values,
-          startsAt: (
-            values.startsAt as { toISOString(): string }
-          ).toISOString(),
-          deadline: (
-            values.deadline as { toISOString(): string }
-          ).toISOString(),
-        });
-      } else {
-        await api("/teams", token, "POST", {
-          ...values,
-          roster: (values.roster as string)
-            .split("\n")
-            .map((s) => s.trim())
-            .filter(Boolean),
-        });
-      }
-      message.success(modal === "event" ? "赛事已发布" : "队伍已创建");
-      setModal(null);
-      refresh();
-    } catch (e) {
-      message.error((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-  async function submitRegistration(values: {
-    teamId: string;
-    acceptRules: boolean;
-  }) {
-    if (!detail) return;
-    setBusy(true);
-    try {
-      await api(
-        `/tournaments/${detail.id}/registrations`,
-        token,
-        "POST",
-        values,
-      );
-      message.success("报名已提交，等待主办方审核");
-      setDetail(null);
-      setTab("registrations");
-      refresh();
-    } catch (e) {
-      message.error((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-  async function submitReview() {
-    if (!review) return;
-    if (reviewStatus === "rejected" && !note.trim()) {
-      message.error("请填写未通过的原因");
-      return;
-    }
-    setBusy(true);
-    try {
-      await api(`/admin/registrations/${review.id}/review`, token, "POST", {
-        status: reviewStatus,
-        version: review.version,
-        note,
+  };
+  useEffect(() => {
+    if (!token) return;
+    let active = true;
+    Promise.all([
+      api<Row>("/platform/me", token),
+      api<Row>("/platform/lookups", token),
+    ])
+      .then(([me, l]) => {
+        if (active) {
+          setAccount(me);
+          setLookups(l);
+        }
+      })
+      .catch((e) => {
+        if (active) fail(e);
       });
-      message.success("审核结果已保存");
-      setReview(null);
-      refresh();
-    } catch (e) {
-      message.error((e as Error).message);
-      refresh();
-    } finally {
-      setBusy(false);
-    }
-  }
-  function openDetail(item: Tournament) {
-    registrationForm.resetFields();
-    setDetail(item);
-  }
-  const pending = registrations.filter((r) => r.status === "pending");
-  const visibleEvents = events.filter((e) =>
-    `${e.title}${e.city}`.includes(search),
-  );
-  const visibleRegistrations = registrations.filter(
-    (r) =>
-      (filter === "all" || r.status === filter) &&
-      `${r.teamName}${r.tournamentTitle}`.includes(search),
-  );
-  const columns = [
-    {
-      title: "参赛队伍",
-      dataIndex: "teamName",
-      render: (name: string, row: Registration) => (
-        <div className="table-team">
-          <Avatar shape="square" icon={<TeamOutlined />} />
-          <div>
-            <strong>{name}</strong>
-            <small>
-              {row.roster.length} 名飞手 · {row.category}
-            </small>
+    return () => {
+      active = false;
+    };
+  }, [token, revision]);
+  useEffect(() => {
+    if (!token) return;
+    let active = true;
+    setLoading(true);
+    setError("");
+    const timer = setTimeout(async () => {
+      try {
+        if (resource === "overview") {
+          const data = await api<Row>("/platform/overview", token);
+          if (active) setOverview(data);
+        } else {
+          const params = new URLSearchParams({
+            q: query,
+            status,
+            parent,
+            offset: String((page - 1) * 30),
+            limit: "30",
+          });
+          const data = await api<{ rows: Row[]; total: number }>(
+            `/platform/${resource}?${params}`,
+            token,
+          );
+          if (active) {
+            setRows(data.rows);
+            setTotal(data.total);
+          }
+        }
+      } catch (e) {
+        if (active) fail(e as Error);
+      } finally {
+        if (active) setLoading(false);
+      }
+    }, 200);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [token, resource, query, status, parent, page, revision]);
+  useEffect(() => {
+    setRelated([]);
+    setMembers([]);
+    setConversation(null);
+    if (!selected?.id || !token) return;
+    let active = true;
+    (async () => {
+      if (resource === "posts") {
+        let offset = 0;
+        let items: Row[] = [];
+        while (active) {
+          const result = await api<{ rows: Row[]; total: number }>(
+            "/platform/applications?parent=" +
+              selected.id +
+              "&limit=100&offset=" +
+              offset,
+            token,
+          );
+          items.push(...result.rows);
+          offset += result.rows.length;
+          if (offset >= result.total || !result.rows.length) break;
+        }
+        if (active) setRelated(items);
+      } else if (resource === "teams") {
+        const result = await api<Row[]>(
+          "/platform/teams/" + selected.id + "/members",
+          token,
+        );
+        if (active) setMembers(result);
+      } else if (resource !== "audit") {
+        const result = await api<{ rows: Row[] }>(
+          "/platform/audit?parent=" + selected.id + "&limit=100",
+          token,
+        );
+        if (active) setRelated(result.rows);
+      }
+    })().catch((e) => {
+      if (active) setError(e.message);
+    });
+    return () => {
+      active = false;
+    };
+  }, [selected, resource, token]);
+  const done = () => {
+    setSelected(null);
+    setEditing(false);
+    setConversation(null);
+    refresh();
+  };
+  if (!token)
+    return (
+      <main className="login-page">
+        <section className="login-intro">
+          <div className="brand">
+            <TrophyOutlined /> DRONE MATCH
           </div>
-        </div>
+          <h1>
+            无人机足球
+            <br />
+            平台运营中心
+          </h1>
+          <p>赛事、内容与社区，在同一个工作台中管理。</p>
+          <div className="login-note">俱乐部、主办方及队长请使用移动端。</div>
+        </section>
+        <section className="login-panel">
+          <span className="eyebrow">平台专用</span>
+          <h2>登录工作台</h2>
+          <p className="muted">使用已创建的平台管理员账号。</p>
+          {error && <Alert title={error} type="error" showIcon />}
+          <Form
+            layout="vertical"
+            onFinish={async (values) => {
+              setLoading(true);
+              setError("");
+              try {
+                const result = await api<{ token: string; account: Row }>(
+                  "/platform/sessions",
+                  "",
+                  "POST",
+                  values,
+                );
+                sessionStorage.setItem("platform-token", result.token);
+                setToken(result.token);
+                setAccount(result.account);
+              } catch (e) {
+                setError((e as Error).message);
+              } finally {
+                setLoading(false);
+              }
+            }}
+          >
+            <Form.Item
+              name="username"
+              label="管理员账号"
+              rules={[{ required: true }]}
+            >
+              <Input autoComplete="username" size="large" />
+            </Form.Item>
+            <Form.Item
+              name="password"
+              label="密码"
+              rules={[{ required: true }]}
+            >
+              <Input.Password autoComplete="current-password" size="large" />
+            </Form.Item>
+            <Button
+              block
+              type="primary"
+              size="large"
+              htmlType="submit"
+              loading={loading}
+            >
+              登录
+            </Button>
+          </Form>
+        </section>
+      </main>
+    );
+  const columns: any[] = [
+    {
+      title: resource === "content" ? "内容" : "名称 / 记录",
+      key: "title",
+      render: (_: unknown, row: Row) => (
+        <Button
+          type="link"
+          className="row-title"
+          onClick={() => {
+            setSelected(row);
+            setEditing(false);
+          }}
+        >
+          {row.draft?.title ||
+            row.title ||
+            row.name ||
+            row.team_name ||
+            row.category ||
+            row.action ||
+            row.id}
+        </Button>
       ),
     },
-    { title: "报名赛事", dataIndex: "tournamentTitle" },
-    { title: "提交时间", dataIndex: "createdAt", render: date },
+    ...(resource === "content"
+      ? [
+          { title: "类型", dataIndex: "kind", render: (v: string) => kinds[v] },
+          {
+            title: "发布状态",
+            render: (_: unknown, r: Row) => (
+              <Tag color={r.published ? "blue" : "default"}>
+                {r.published ? "已发布" : "未发布"}
+              </Tag>
+            ),
+          },
+          { title: "城市", render: (_: unknown, r: Row) => r.draft.city },
+        ]
+      : [
+          {
+            title: resource === "audit" ? "对象" : "城市 / 身份",
+            render: (_: unknown, r: Row) =>
+              display(
+                r.city || r.role || r.resource_type || r.tournament_id || "—",
+              ),
+          },
+          {
+            title: "状态",
+            render: (_: unknown, r: Row) =>
+              r.hidden ? (
+                <Tag color="red">已下架</Tag>
+              ) : r.disabled ? (
+                <Tag color="red">已停用</Tag>
+              ) : r.status ? (
+                <Tag
+                  color={
+                    ["approved", "resolved", "final"].includes(r.status)
+                      ? "blue"
+                      : "default"
+                  }
+                >
+                  {display(r.status)}
+                </Tag>
+              ) : (
+                <span className="muted">正常</span>
+              ),
+          },
+        ]),
     {
-      title: "状态",
-      dataIndex: "status",
-      render: (s: Registration["status"]) => (
-        <Tag
-          color={
-            s === "approved" ? "green" : s === "pending" ? "gold" : "default"
-          }
-        >
-          {statusText[s]}
-        </Tag>
-      ),
+      title: "时间",
+      render: (_: unknown, r: Row) => {
+        const value = r.updated_at || r.starts_at || r.created_at;
+        return value
+          ? new Date(value).toLocaleString("zh-CN", { hour12: false })
+          : "—";
+      },
     },
     {
       title: "操作",
-      key: "action",
-      render: (_: unknown, r: Registration) => (
+      render: (_: unknown, r: Row) => (
         <Button
-          type="link"
           onClick={() => {
-            setReview(r);
-            setReviewStatus("approved");
-            setNote("");
+            setSelected(r);
+            setEditing(false);
           }}
         >
-          {organizer && r.status === "pending" ? "审核报名" : "查看详情"}{" "}
-          <ArrowRightOutlined />
+          查看详情
         </Button>
       ),
     },
   ];
-  if (!account)
-    return (
-      <div className="login-page">
-        <section className="login-brand">
-          <div className="brand">
-            <ThunderboltOutlined />
-            <span>Drone Match</span>
+  const contentActions =
+    selected && resource === "content" ? (
+      <Space wrap>
+        <Button type="primary" onClick={() => setEditing(true)}>
+          编辑草稿
+        </Button>
+        <ReasonAction
+          title="发布草稿"
+          description="当前草稿将替换移动端已发布内容。请核对下方预览。"
+          run={(reason) =>
+            api("/platform/content/" + selected.id, token, "PUT", {
+              version: selected.version,
+              operation: "publish",
+              reason,
+            })
+          }
+          onDone={done}
+        />
+        {selected.published && (
+          <ReasonAction
+            title="下架内容"
+            description="刷新后移动端不再展示该内容。"
+            run={(reason) =>
+              api("/platform/content/" + selected.id, token, "PUT", {
+                version: selected.version,
+                operation: "unpublish",
+                reason,
+              })
+            }
+            onDone={done}
+          />
+        )}
+      </Space>
+    ) : null;
+  return (
+    <div className="platform-shell">
+      <aside className="sidebar">
+        <div className="brand">
+          <TrophyOutlined />
+          <span>
+            DRONE MATCH<small>平台运营中心</small>
+          </span>
+        </div>
+        <Menu
+          mode="inline"
+          selectedKeys={[resource]}
+          items={navigation}
+          onClick={({ key }) => navigate(key)}
+        />
+        <div className="sidebar-footer">
+          与移动端共用业务数据
+          <br />
+          <span>平台操作全程留痕</span>
+        </div>
+      </aside>
+      <Drawer
+        title="平台导航"
+        placement="left"
+        open={navOpen}
+        onClose={() => setNavOpen(false)}
+      >
+        <Menu
+          selectedKeys={[resource]}
+          items={navigation}
+          onClick={({ key }) => navigate(key)}
+        />
+      </Drawer>
+      <main className="workspace">
+        <header className="topbar">
+          <Button
+            className="mobile-menu"
+            icon={<MenuOutlined />}
+            aria-label="展开导航"
+            onClick={() => setNavOpen(true)}
+          />
+          <span>平台 / {titles[resource]}</span>
+          <Space>
+            <Avatar size="small" icon={<UserOutlined />} />
+            <span>{account?.username}</span>
+            <Button
+              type="text"
+              icon={<LogoutOutlined />}
+              onClick={async () => {
+                try {
+                  await api("/platform/session", token, "DELETE");
+                  sessionStorage.removeItem("platform-token");
+                  setToken("");
+                  setAccount(null);
+                  setSelected(null);
+                  setConversation(null);
+                } catch (e) {
+                  fail(e as Error);
+                }
+              }}
+            >
+              退出
+            </Button>
+          </Space>
+        </header>
+        <section className="page-content">
+          <div className="page-heading">
+            <div>
+              <h1>{titles[resource]}</h1>
+              <p className="muted">
+                {resource === "overview"
+                  ? "查看平台动态，处理当前待办。"
+                  : resource === "content"
+                    ? "管理移动端展示内容，先保存草稿，核对后发布。"
+                    : "查询全站记录，查看关联业务与操作历史。"}
+              </p>
+            </div>
+            <Space>
+              <Button icon={<ReloadOutlined />} onClick={refresh}>
+                刷新
+              </Button>
+              {["content", "tournaments", "organizations", "matches"].includes(
+                resource,
+              ) && (
+                <Button
+                  type="primary"
+                  icon={<PlusOutlined />}
+                  onClick={() => {
+                    setSelected({});
+                    setEditing(true);
+                  }}
+                >
+                  新增
+                </Button>
+              )}
+            </Space>
           </div>
-          <div>
-            <h1>
-              无人机足球
-              <br />
-              赛事管理中心
-            </h1>
-            <p>
-              发布赛事、审核队伍报名，
-              <br />
-              集中管理机构的参赛信息。
-            </p>
-          </div>
-          <span className="login-foot">Drone Match 赛事平台</span>
-        </section>
-        <section className="login-form">
-          <Tag color="green">本地开发环境</Tag>
-          <h2>进入赛事工作台</h2>
-          <p className="muted">选择演示身份，体验不同机构的工作空间。</p>
           {error && (
             <Alert
-              type="error"
+              showIcon
               title={error}
+              type="error"
               action={<Button onClick={refresh}>重试</Button>}
             />
           )}
           <Spin spinning={loading}>
-            <div className="account-list">
-              {accounts.map((a) => (
-                <button
-                  className="account-option"
-                  key={a.id}
-                  disabled={busy}
-                  onClick={() => login(a.id)}
-                >
-                  <Avatar
-                    icon={
-                      a.role === "organizer" ? (
-                        <TrophyOutlined />
-                      ) : (
-                        <TeamOutlined />
-                      )
-                    }
-                  />
-                  <span>
-                    <strong>{a.name}</strong>
-                    <small>
-                      {a.organizationName} ·{" "}
-                      {a.role === "organizer" ? "主办方" : "队长"}
-                    </small>
-                  </span>
-                  <ArrowRightOutlined />
-                </button>
-              ))}
-            </div>
-          </Spin>
-          <p className="dev-note">
-            演示数据均为虚构。此版本仅在本机运行，真实短信登录与身份核验将在后续阶段接入。
-          </p>
-        </section>
-      </div>
-    );
-  const nav = [
-    { id: "overview", label: "工作台", icon: <AppstoreOutlined /> },
-    {
-      id: "events",
-      label: organizer ? "赛事管理" : "赛事广场",
-      icon: <TrophyOutlined />,
-    },
-    {
-      id: "registrations",
-      label: organizer ? "报名审核" : "我的报名",
-      icon: <UnorderedListOutlined />,
-    },
-    ...(!organizer
-      ? [{ id: "teams", label: "我的队伍", icon: <TeamOutlined /> }]
-      : []),
-  ];
-  const headings: Record<string, string> = {
-    overview: "工作台",
-    events: organizer ? "赛事管理" : "赛事广场",
-    registrations: organizer ? "报名审核" : "我的报名",
-    teams: "我的队伍",
-  };
-  return (
-    <div className="shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <ThunderboltOutlined />
-          <span>
-            Drone Match<small>无人机足球赛事平台</small>
-          </span>
-        </div>
-        <div className="workspace-label">{account.organizationName}</div>
-        <nav>
-          {nav.map((n) => (
-            <button
-              className={tab === n.id ? "nav-item active" : "nav-item"}
-              key={n.id}
-              onClick={() => {
-                setTab(n.id);
-                setSearch("");
-                setFilter("all");
-              }}
-            >
-              {n.icon}
-              <span>{n.label}</span>
-              {n.id === "registrations" && pending.length > 0 && (
-                <b>{pending.length}</b>
-              )}
-            </button>
-          ))}
-        </nav>
-        <div className="sidebar-bottom">
-          <div className="workspace-card">
-            <CheckCircleOutlined />
-            <div>
-              独立机构工作空间<small>仅显示你有权限管理的数据</small>
-            </div>
-          </div>
-          <button
-            className="profile"
-            aria-label="退出登录"
-            onClick={logout}
-            disabled={busy}
-          >
-            <Avatar>{account.name[0]}</Avatar>
-            <span>
-              {account.name}
-              <small>{organizer ? "赛事运营" : "队伍管理"}</small>
-            </span>
-            <LogoutOutlined />
-          </button>
-        </div>
-      </aside>
-      <main className="main">
-        <header className="topbar">
-          <span>
-            工作空间 <span className="slash">/</span>{" "}
-            {nav.find((n) => n.id === tab)?.label}
-          </span>
-          <div>
-            <Tag>本地演示</Tag>
-            <Button
-              icon={<ReloadOutlined />}
-              onClick={refresh}
-              loading={loading}
-            >
-              刷新数据
-            </Button>
-          </div>
-        </header>
-        <div className="page">
-          <div className="page-heading">
-            <div>
-              <h1>{headings[tab]}</h1>
-              <p className="muted">
-                {organizer
-                  ? `${account.organizationName} · ${pending.length} 条报名待处理`
-                  : `${account.organizationName} · 管理队伍与参赛报名`}
-              </p>
-            </div>
-            <Button
-              type="primary"
-              size="large"
-              icon={<PlusOutlined />}
-              onClick={() => openModal(organizer ? "event" : "team")}
-            >
-              {organizer ? "发布赛事" : "创建队伍"}
-            </Button>
-          </div>
-          {error && (
-            <Alert
-              type="error"
-              title={error}
-              showIcon
-              closable
-              onClose={() => setError("")}
-            />
-          )}
-          <Spin spinning={loading}>
-            {tab === "overview" && (
+            {resource === "overview" ? (
               <>
-                <div className="stat-grid">
+                <div className="metrics">
                   {[
-                    {
-                      label: organizer ? "正在报名的赛事" : "可报名赛事",
-                      value: events.filter(
-                        (e) => e.status === "open" && e.approved < e.capacity,
-                      ).length,
-                      icon: <TrophyOutlined />,
-                      hint: "报名通道开放中的赛事",
-                    },
-                    {
-                      label: "待审核报名",
-                      value: pending.length,
-                      icon: <ClockCircleOutlined />,
-                      hint: organizer
-                        ? "需要你查看并处理"
-                        : "已提交，等待主办方确认",
-                    },
-                    {
-                      label: "已通过报名",
-                      value: registrations.filter(
-                        (r) => r.status === "approved",
-                      ).length,
-                      icon: <CheckCircleOutlined />,
-                      hint: "已获得参赛资格",
-                    },
-                  ].map((s) => (
-                    <div className="stat" key={s.label}>
-                      <div>
-                        {s.label}
-                        {s.icon}
-                      </div>
-                      <strong>{s.value}</strong>
-                      <small>{s.hint}</small>
-                    </div>
+                    ["tournaments", "全站赛事", "tournaments"],
+                    ["users", "可用账号", "users"],
+                    ["posts", "公开社区活动", "posts"],
+                  ].map(([key, label, target]) => (
+                    <button
+                      className="metric"
+                      key={key}
+                      onClick={() => navigate(target)}
+                    >
+                      <span>{label}</span>
+                      <strong>{overview[key] ?? "—"}</strong>
+                      <small>查看记录 →</small>
+                    </button>
                   ))}
                 </div>
-                <section className="table-panel">
+                <section className="panel">
                   <div className="section-heading">
-                    <div>
-                      <h2>{organizer ? "待审核报名" : "最近报名"}</h2>
-                      <p className="muted">
-                        {organizer
-                          ? "核对队伍、设备级别与飞手名单后处理。"
-                          : "报名状态与主办方审核结果保持同步。"}
-                      </p>
-                    </div>
-                    <Button onClick={() => setTab("registrations")}>
-                      全部报名 <ArrowRightOutlined />
-                    </Button>
+                    <h2>待处理</h2>
+                    <span className="muted">根据当前业务记录汇总</span>
                   </div>
-                  <Table
-                    rowKey="id"
-                    columns={columns}
-                    dataSource={(organizer ? pending : registrations).slice(
-                      0,
-                      5,
-                    )}
-                    pagination={false}
-                    scroll={{ x: 760 }}
-                    locale={{
-                      emptyText: (
-                        <Empty
-                          image={Empty.PRESENTED_IMAGE_SIMPLE}
-                          description={
-                            organizer
-                              ? "当前没有待审核报名"
-                              : "还没有报名，去看看赛事吧"
-                          }
-                        />
-                      ),
+                  <button
+                    className="task-row"
+                    onClick={() => {
+                      navigate("registrations");
+                      setStatus("pending");
                     }}
-                  />
+                  >
+                    <div>
+                      <AuditOutlined />
+                      <span>
+                        <strong>待审核报名</strong>
+                        <small>核对参赛队伍、设备级别与名单</small>
+                      </span>
+                    </div>
+                    <b>{overview.pending ?? "—"} →</b>
+                  </button>
+                  <button
+                    className="task-row"
+                    onClick={() => navigate("feedback")}
+                  >
+                    <div>
+                      <MessageOutlined />
+                      <span>
+                        <strong>用户反馈</strong>
+                        <small>跟进问题，回复处理结果</small>
+                      </span>
+                    </div>
+                    <b>{overview.feedback ?? "—"} →</b>
+                  </button>
                 </section>
-                <div className="section-heading">
-                  <h2>{organizer ? "近期赛事" : "近期赛事"}</h2>
-                  <Button type="text" onClick={() => setTab("events")}>
-                    查看全部 <ArrowRightOutlined />
-                  </Button>
-                </div>
-                <div className="event-grid">
-                  {events.slice(0, 2).map((e) => (
-                    <EventCard
-                      key={e.id}
-                      event={e}
-                      onClick={() => openDetail(e)}
-                    />
+                <section className="panel">
+                  <h2>最近发布</h2>
+                  {(overview.recentContent || []).map((c: Row) => (
+                    <button
+                      className="task-row"
+                      key={c.id}
+                      onClick={() => {
+                        navigate("content");
+                        setQuery(c.id);
+                      }}
+                    >
+                      <span>{c.published.title}</span>
+                      <span className="muted">
+                        {kinds[c.kind]} ·{" "}
+                        {new Date(c.updated_at).toLocaleDateString()}
+                      </span>
+                    </button>
                   ))}
-                </div>
+                </section>
+                <section className="panel">
+                  <h2>常用操作</h2>
+                  <Space wrap>
+                    <Button onClick={() => navigate("content")}>
+                      维护首页内容
+                    </Button>
+                    <Button onClick={() => navigate("posts")}>
+                      巡查社区发布
+                    </Button>
+                    <Button onClick={() => navigate("matches")}>
+                      查看赛程与比分
+                    </Button>
+                    <Button onClick={() => navigate("audit")}>
+                      查询操作记录
+                    </Button>
+                  </Space>
+                </section>
               </>
-            )}
-            {tab === "events" && (
-              <>
-                <div className="toolbar">
+            ) : (
+              <section className="panel data-panel">
+                <div className="filters">
                   <Input
                     prefix={<SearchOutlined />}
-                    placeholder="搜索赛事或城市"
-                    aria-label="搜索赛事或城市"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
+                    aria-label="搜索记录"
+                    placeholder="搜索名称、城市或编号"
+                    value={query}
+                    onChange={(e) => {
+                      setQuery(e.target.value);
+                      setPage(1);
+                    }}
                     allowClear
                   />
-                  <span className="muted">
-                    共 {visibleEvents.length} 场赛事
-                  </span>
-                </div>
-                <div className="event-grid">
-                  {visibleEvents.map((e) => (
-                    <EventCard
-                      key={e.id}
-                      event={e}
-                      onClick={() => openDetail(e)}
+                  {["registrations", "matches"].includes(resource) && (
+                    <Select
+                      allowClear
+                      placeholder="全部赛事"
+                      aria-label="按赛事筛选"
+                      value={parent || undefined}
+                      onChange={(v) => {
+                        setParent(v || "");
+                        setPage(1);
+                      }}
+                      options={(lookups.tournaments || []).map((r: Row) => ({
+                        value: r.id,
+                        label: r.title,
+                      }))}
                     />
-                  ))}
-                </div>
-                {visibleEvents.length === 0 && (
-                  <Empty description="没有找到相关赛事" />
-                )}
-              </>
-            )}
-            {tab === "registrations" && (
-              <section className="table-panel">
-                <div className="toolbar">
-                  <Input
-                    prefix={<SearchOutlined />}
-                    placeholder="搜索队伍或赛事"
-                    aria-label="搜索报名"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    allowClear
-                  />
-                  <Select
-                    aria-label="筛选报名状态"
-                    value={filter}
-                    onChange={setFilter}
-                    options={[
-                      { value: "all", label: "全部状态" },
-                      ...Object.entries(statusText).map(([value, label]) => ({
-                        value,
-                        label,
-                      })),
-                    ]}
-                  />
+                  )}{" "}
+                  {["registrations", "matches", "posts", "feedback"].includes(
+                    resource,
+                  ) && (
+                    <Select
+                      allowClear
+                      placeholder="全部状态"
+                      aria-label="按状态筛选"
+                      value={status || undefined}
+                      onChange={(v) => {
+                        setStatus(v || "");
+                        setPage(1);
+                      }}
+                      options={(resource === "registrations"
+                        ? ["pending", "approved", "rejected"]
+                        : resource === "matches"
+                          ? ["scheduled", "final", "cancelled"]
+                          : resource === "feedback"
+                            ? ["received", "processing", "resolved"]
+                            : ["open", "closed", "matched", "cancelled"]
+                      ).map((value) => ({ value, label: statuses[value] }))}
+                    />
+                  )}
+                  <span className="muted">共 {total} 条</span>
                 </div>
                 <Table
                   rowKey="id"
+                  dataSource={rows}
                   columns={columns}
-                  dataSource={visibleRegistrations}
-                  scroll={{ x: 760 }}
-                  pagination={{ pageSize: 8, hideOnSinglePage: true }}
-                  locale={{ emptyText: <Empty description="暂无报名记录" /> }}
+                  scroll={{ x: 780 }}
+                  pagination={{
+                    current: page,
+                    pageSize: 30,
+                    total,
+                    onChange: setPage,
+                    showSizeChanger: false,
+                  }}
+                  locale={{
+                    emptyText: (
+                      <Empty description="没有匹配记录，试试其他筛选条件" />
+                    ),
+                  }}
                 />
               </section>
             )}
-            {tab === "teams" && (
-              <div className="team-grid">
-                {teams.map((team) => (
-                  <section className="team-card" key={team.id}>
-                    <Avatar size={56} shape="square" icon={<TeamOutlined />} />
-                    <h2>{team.name}</h2>
-                    <p className="muted">
-                      {team.city} · {team.category} 级
-                    </p>
-                    <div className="roster">
-                      {team.roster.map((name) => (
-                        <Tag key={name}>{name}</Tag>
-                      ))}
-                    </div>
-                    <small className="muted">
-                      {team.roster.length} 名成年演示飞手
-                    </small>
-                  </section>
-                ))}
-                {teams.length === 0 && (
-                  <Empty description="还没有队伍，创建后即可报名" />
-                )}
-              </div>
-            )}
           </Spin>
-          <footer className="page-footer">
-            Drone Match <span>本地开发环境 · 仅使用演示资料</span>
-          </footer>
-        </div>
+        </section>
       </main>
-      <Modal
-        title={modal === "event" ? "发布演示赛事" : "创建演示队伍"}
-        open={!!modal}
-        onCancel={() => !busy && setModal(null)}
-        onOk={() => form.submit()}
-        confirmLoading={busy}
-        okText={modal === "event" ? "确认发布" : "创建队伍"}
-        cancelText="取消"
+      <Drawer
+        size={760}
+        open={!!selected}
+        onClose={() => {
+          setSelected(null);
+          setEditing(false);
+          setConversation(null);
+        }}
+        title={
+          editing
+            ? (selected?.id ? "编辑" : "新增") + titles[resource]
+            : titles[resource] + "详情"
+        }
         destroyOnHidden
       >
-        <Form
-          form={form}
-          layout="vertical"
-          onFinish={create}
-          initialValues={{ category: "20cm", capacity: 16 }}
-        >
-          <Alert
-            type="info"
-            title="仅用于本地成年飞手演示，不用于真实赛事报名。"
-            showIcon
-            className="form-note"
-          />
-          <Form.Item
-            name={modal === "event" ? "title" : "name"}
-            label={modal === "event" ? "赛事名称" : "队伍名称"}
-            rules={[
-              {
-                required: true,
-                min: 2,
-                max: 80,
-                message: "请输入 2–80 字名称",
-              },
-            ]}
-          >
-            <Input maxLength={80} />
-          </Form.Item>
-          <div className="form-row">
-            <Form.Item
-              name="city"
-              label="城市"
-              rules={[{ required: true, min: 2, message: "请输入城市" }]}
-            >
-              <Input />
-            </Form.Item>
-            <Form.Item
-              name="category"
-              label="设备级别"
-              rules={[{ required: true }]}
-            >
-              <Select
-                options={[
-                  { value: "20cm", label: "20cm 级" },
-                  { value: "40cm", label: "40cm 级" },
-                ]}
+        {selected &&
+          (editing ? (
+            resource === "content" ? (
+              <ContentEditor row={selected} token={token} onDone={done} />
+            ) : (
+              <MutationForm
+                resource={resource}
+                row={selected}
+                lookups={lookups}
+                token={token}
+                onDone={done}
+                onCancel={() =>
+                  selected.id ? setEditing(false) : setSelected(null)
+                }
               />
-            </Form.Item>
-          </div>
-          {modal === "event" ? (
-            <>
-              <Form.Item
-                name="venue"
-                label="比赛场地"
-                rules={[{ required: true, min: 2, message: "请输入比赛场地" }]}
-              >
-                <Input />
-              </Form.Item>
-              <div className="form-row">
-                <Form.Item
-                  name="deadline"
-                  label="报名截止（本地时间）"
-                  rules={[{ required: true }]}
-                >
-                  <DatePicker
-                    showTime
-                    format="YYYY-MM-DD HH:mm"
-                    style={{ width: "100%" }}
-                  />
-                </Form.Item>
-                <Form.Item
-                  name="startsAt"
-                  label="比赛开始（本地时间）"
-                  rules={[{ required: true }]}
-                >
-                  <DatePicker
-                    showTime
-                    format="YYYY-MM-DD HH:mm"
-                    style={{ width: "100%" }}
-                  />
-                </Form.Item>
-              </div>
-              <Form.Item
-                name="capacity"
-                label="队伍名额"
-                rules={[{ required: true }]}
-              >
-                <InputNumber min={1} max={128} />
-              </Form.Item>
-              <Form.Item
-                name="description"
-                label="赛事介绍"
-                rules={[
-                  {
-                    required: true,
-                    min: 4,
-                    message: "请填写至少 4 字赛事介绍",
-                  },
-                ]}
-              >
-                <Input.TextArea rows={3} maxLength={2000} />
-              </Form.Item>
-            </>
+            )
           ) : (
             <>
-              <Form.Item
-                name="roster"
-                label="飞手名单（每行一名，最多 10 名）"
-                rules={[{ required: true, message: "请填写成年演示飞手名单" }]}
-              >
-                <Input.TextArea rows={4} />
-              </Form.Item>
-              <Form.Item
-                name="adultOnly"
-                valuePropName="checked"
-                rules={[
-                  {
-                    validator: (_, v) =>
-                      v
-                        ? Promise.resolve()
-                        : Promise.reject(new Error("请确认仅使用成年演示资料")),
-                  },
-                ]}
-              >
-                <Checkbox>仅使用成年飞手的虚构演示资料</Checkbox>
-              </Form.Item>
-            </>
-          )}
-        </Form>
-      </Modal>
-      <Modal
-        title="赛事详情"
-        open={!!detail}
-        onCancel={() => !busy && setDetail(null)}
-        footer={null}
-        width={640}
-        destroyOnHidden
-      >
-        {detail && (
-          <>
-            <Tag color="green">{detail.category} 级</Tag>
-            <h2>{detail.title}</h2>
-            <p>{detail.description}</p>
-            <div className="detail-facts">
-              <p>
-                主办方 <strong>{detail.organizerName}</strong>
-              </p>
-              <p>
-                比赛时间 <strong>{date(detail.startsAt)}</strong>
-              </p>
-              <p>
-                报名截止 <strong>{date(detail.deadline)}</strong>
-              </p>
-              <p>
-                比赛场地{" "}
-                <strong>
-                  {detail.city} · {detail.venue}
-                </strong>
-              </p>
-              <p>
-                已通过 / 总名额{" "}
-                <strong>
-                  {detail.approved} / {detail.capacity} 队
-                </strong>
-              </p>
-            </div>
-            <h3>报名说明</h3>
-            <p className="rules">{detail.rules}</p>
-            {!organizer &&
-              (registrations.some((r) => r.tournamentId === detail.id) ? (
-                <Alert
-                  type="success"
-                  title="已有报名记录，请前往“我的报名”查看进度。"
-                />
-              ) : detail.status === "closed" ||
-                detail.approved >= detail.capacity ? (
-                <Alert type="warning" title="报名已截止或名额已满" />
-              ) : teams.filter((t) => t.category === detail.category).length ===
-                0 ? (
-                <Alert type="info" title="请先创建与本赛事设备级别一致的队伍" />
-              ) : (
-                <Form
-                  form={registrationForm}
-                  layout="vertical"
-                  onFinish={submitRegistration}
-                >
-                  <Form.Item
-                    name="teamId"
-                    label="选择报名队伍"
-                    rules={[{ required: true, message: "请选择队伍" }]}
-                  >
-                    <Select
-                      options={teams
-                        .filter((t) => t.category === detail.category)
-                        .map((t) => ({
-                          value: t.id,
-                          label: `${t.name} · ${t.roster.length} 人`,
-                        }))}
-                    />
-                  </Form.Item>
-                  <Form.Item
-                    name="acceptRules"
-                    valuePropName="checked"
-                    rules={[
+              <div className="detail-actions">
+                {contentActions}
+                {!["audit", "posts", "content"].includes(resource) && (
+                  <Button type="primary" onClick={() => setEditing(true)}>
+                    平台代办 / 修改
+                  </Button>
+                )}
+                {["tournaments", "posts"].includes(resource) && (
+                  <ReasonAction
+                    title={selected.hidden ? "恢复展示" : "下架内容"}
+                    description={
+                      selected.hidden
+                        ? "恢复公开展示，不会重新开启已结束的活动。"
+                        : "退出公开列表并阻止新增参与；保留已有历史记录。"
+                    }
+                    run={(reason) =>
+                      api(
+                        `/platform/${resource}/${selected.id}`,
+                        token,
+                        "PATCH",
+                        {
+                          version: selected.version,
+                          reason,
+                          values: { hidden: !selected.hidden },
+                        },
+                      )
+                    }
+                    onDone={done}
+                  />
+                )}
+                {resource === "organizations" && (
+                  <>
+                    {[
+                      ["teams", "所属队伍"],
+                      ["users", "所属账号"],
+                      ["tournaments", "所属赛事"],
+                    ].map(([key, label]) => (
+                      <Button
+                        key={key}
+                        onClick={() => {
+                          const id = selected.id;
+                          navigate(key);
+                          setParent(id);
+                        }}
+                      >
+                        {label}
+                      </Button>
+                    ))}
+                  </>
+                )}
+                {resource === "tournaments" && (
+                  <>
+                    <Button
+                      onClick={() => {
+                        const id = selected.id;
+                        navigate("registrations");
+                        setParent(id);
+                      }}
+                    >
+                      查看报名
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        const id = selected.id;
+                        navigate("matches");
+                        setParent(id);
+                      }}
+                    >
+                      查看赛程
+                    </Button>
+                  </>
+                )}
+              </div>
+              {resource === "content" ? (
+                <>
+                  <Tag>{kinds[selected.kind]}</Tag>
+                  <p className="muted">
+                    内容编号：{selected.id} · 版本 {selected.version}
+                  </p>
+                  <Tabs
+                    items={[
                       {
-                        validator: (_, v) =>
-                          v
-                            ? Promise.resolve()
-                            : Promise.reject(
-                                new Error("请先阅读并同意报名说明"),
-                              ),
+                        key: "draft",
+                        label: "当前草稿",
+                        children: (
+                          <ContentPreview
+                            data={selected.draft}
+                            kind={selected.kind}
+                          />
+                        ),
+                      },
+                      {
+                        key: "published",
+                        label: "已发布版本",
+                        children: selected.published ? (
+                          <ContentPreview
+                            data={selected.published}
+                            kind={selected.kind}
+                          />
+                        ) : (
+                          <Empty description="尚未发布" />
+                        ),
                       },
                     ]}
-                  >
-                    <Checkbox>已阅读演示规则，确认提交当前队伍名单</Checkbox>
-                  </Form.Item>
-                  <Button type="primary" block htmlType="submit" loading={busy}>
-                    提交报名
-                  </Button>
-                </Form>
-              ))}
-          </>
-        )}
-      </Modal>
-      <Modal
-        title={
-          organizer && review?.status === "pending"
-            ? "审核队伍报名"
-            : "报名详情"
-        }
-        open={!!review}
-        onCancel={() => !busy && setReview(null)}
-        footer={
-          organizer && review?.status === "pending" ? (
-            <>
-              <Button onClick={() => setReview(null)} disabled={busy}>
-                取消
-              </Button>
-              <Button type="primary" onClick={submitReview} loading={busy}>
-                确认审核
-              </Button>
+                  />
+                </>
+              ) : (
+                <RecordDetails row={selected} lookups={lookups} />
+              )}
+              {resource === "teams" && (
+                <>
+                  <h3>社区成员</h3>
+                  {members.map((m) => (
+                    <div className="member-row" key={m.id}>
+                      <span>
+                        {m.name} {m.is_owner && <Tag>负责人</Tag>}
+                      </span>
+                      {!m.is_owner && (
+                        <ReasonAction
+                          title="移除成员"
+                          description="不会改变已提交的赛事报名名单。"
+                          run={(reason) =>
+                            api(
+                              "/platform/teams/" +
+                                selected.id +
+                                "/remove-member",
+                              token,
+                              "POST",
+                              { accountId: m.id, reason },
+                            )
+                          }
+                          onDone={done}
+                        />
+                      )}
+                    </div>
+                  ))}
+                </>
+              )}
+              {resource === "posts" && (
+                <>
+                  <h3>申请记录</h3>
+                  {related.length === 0 ? (
+                    <Empty description="暂无申请" />
+                  ) : (
+                    related.map((a) => (
+                      <div className="application-row" key={a.id}>
+                        <span>
+                          {a.applicant_id} · {display(a.status)}
+                        </span>
+                        <ReasonAction
+                          title="调阅会话"
+                          description="仅限处理投诉或纠纷。原因和本次调阅会被记录；不会改变用户已读状态。"
+                          run={async (reason) => {
+                            const result = await api<Row>(
+                              "/platform/applications/" + a.id + "/inspect",
+                              token,
+                              "POST",
+                              { reason },
+                            );
+                            setConversation(result);
+                          }}
+                          onDone={() => {}}
+                        />
+                      </div>
+                    ))
+                  )}
+                </>
+              )}
+              {resource !== "posts" && related.length > 0 && (
+                <>
+                  <h3>操作历史</h3>
+                  {related.map((a) => (
+                    <details className="audit-entry" key={a.id}>
+                      <summary>
+                        {new Date(a.created_at).toLocaleString()} · {a.action} ·{" "}
+                        {a.reason}
+                      </summary>
+                      <RecordDetails row={a} />
+                    </details>
+                  ))}
+                </>
+              )}
             </>
-          ) : null
-        }
-        destroyOnHidden
+          ))}
+      </Drawer>
+      <Drawer
+        size={600}
+        open={!!conversation}
+        onClose={() => setConversation(null)}
+        title="会话调阅（已记录日志）"
       >
-        {review && (
+        {conversation && (
           <>
-            <h2>{review.teamName}</h2>
-            <p className="muted">{review.tournamentTitle}</p>
-            <Tag color={review.status === "approved" ? "green" : "gold"}>
-              {statusText[review.status]}
-            </Tag>
-            <h3>提交时的飞手名单</h3>
-            <div className="roster">
-              {review.roster.map((name) => (
-                <Tag key={name}>{name}</Tag>
-              ))}
+            <p className="muted">申请：{conversation.application.id}</p>
+            <div className="message">
+              <strong>申请说明</strong>
+              <p className="preserve">{conversation.application.message}</p>
             </div>
-            {organizer && review.status === "pending" ? (
-              <>
-                <label className="field-label" htmlFor="review-status">
-                  审核结果
-                </label>
-                <Select
-                  id="review-status"
-                  value={reviewStatus}
-                  onChange={setReviewStatus}
-                  style={{ width: "100%" }}
-                  options={[
-                    { value: "approved", label: "通过，分配参赛名额" },
-                    { value: "rejected", label: "未通过" },
-                  ]}
-                />
-                <label className="field-label" htmlFor="review-note">
-                  {reviewStatus === "rejected"
-                    ? "未通过原因（必填）"
-                    : "审核备注（选填）"}
-                </label>
-                <Input.TextArea
-                  id="review-note"
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                  maxLength={500}
-                  rows={3}
-                />
-              </>
-            ) : (
-              <p>审核说明：{review.reviewNote || "暂无补充说明"}</p>
-            )}
+            {conversation.messages.map((m: Row) => (
+              <div key={m.id} className="message">
+                <strong>{m.sender_name}</strong>
+                <small>{new Date(m.created_at).toLocaleString()}</small>
+                <p className="preserve">{m.body}</p>
+              </div>
+            ))}
           </>
         )}
-      </Modal>
+      </Drawer>
     </div>
-  );
-}
-function EventCard({
-  event: e,
-  onClick,
-}: {
-  event: Tournament;
-  onClick: () => void;
-}) {
-  const starts = new Date(e.startsAt);
-  return (
-    <button className="event-card" onClick={onClick}>
-      <div className="event-date">
-        <span>{starts.getMonth() + 1}月</span>
-        <strong>{starts.getDate()}</strong>
-        <small>{e.category}</small>
-      </div>
-      <div className="event-content">
-        <div>
-          <Tag
-            color={
-              e.status === "open" && e.approved < e.capacity
-                ? "green"
-                : "default"
-            }
-          >
-            {e.status === "closed"
-              ? "报名截止"
-              : e.approved >= e.capacity
-                ? "名额已满"
-                : "报名中"}
-          </Tag>
-          <span className="muted">
-            {e.approved}/{e.capacity} 队已通过
-          </span>
-        </div>
-        <h3>{e.title}</h3>
-        <p>
-          <EnvironmentOutlined /> {e.city}　{e.venue}
-        </p>
-        <div className="event-bottom">
-          <span>{date(e.startsAt)}</span>
-          <span>查看详情</span>
-        </div>
-      </div>
-    </button>
   );
 }
 createRoot(document.getElementById("root")!).render(
@@ -1031,22 +956,23 @@ createRoot(document.getElementById("root")!).render(
       locale={zhCN}
       theme={{
         token: {
-          colorPrimary: "#008a46",
-          borderRadius: 8,
+          colorPrimary: "#285de5",
+          colorText: "#202633",
+          colorBgLayout: "#f5f6fa",
+          borderRadius: 10,
           fontFamily:
-            '-apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif',
-          colorText: "#18221d",
-          colorTextSecondary: "#66716b",
+            '-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif',
           controlHeight: 40,
         },
         components: {
+          Menu: { itemSelectedBg: "#edf2ff", itemHeight: 44 },
+          Table: { headerBg: "#f7f8fb" },
           Button: { primaryShadow: "none" },
-          Table: { headerBg: "#f6f8f6", headerColor: "#64736b" },
         },
       }}
     >
       <AntApp>
-        <App />
+        <PlatformApp />
       </AntApp>
     </ConfigProvider>
   </React.StrictMode>,

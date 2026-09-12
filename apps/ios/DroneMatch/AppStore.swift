@@ -3,6 +3,29 @@ import SwiftUI
 
 @MainActor
 final class AppStore: ObservableObject {
+  @Published var content: [PublishedContent] =
+    (UserDefaults.standard.data(forKey: "publishedContentCache").flatMap {
+      try? JSONDecoder().decode([PublishedContent].self, from: $0)
+    }) ?? []
+  @Published var contentError: String?
+  private var contentRevision = 0
+  func refreshContent(city: String) async {
+    contentRevision += 1
+    let revision = contentRevision
+    do {
+      let escaped = city.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+      let items: [PublishedContent] = try await api.request("content?city=" + escaped)
+      guard revision == contentRevision, !Task.isCancelled else { return }
+      content = items
+      contentError = nil
+      if let data = try? JSONEncoder().encode(items) {
+        UserDefaults.standard.set(data, forKey: "publishedContentCache")
+      }
+    } catch {
+      guard revision == contentRevision, !Task.isCancelled else { return }
+      contentError = "内容同步失败，当前保留上次成功加载的内容。"
+    }
+  }
   @Published var tournaments: [Tournament] = []
   @Published var teams: [Team] = []
   @Published var registrations: [Registration] = []

@@ -35,23 +35,3 @@ struct BrowseCity: Codable, Identifiable {
     return rows.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
   }()
 }
-
-struct HomePromotion: Codable, Identifiable {
-  let id, title, subtitle, imageName, city, startsAt, endsAt: String
-  let destination: URL
-  func isVisible(in selectedCity: String, at now: Date) -> Bool {
-    guard destination.scheme == "https", destination.host != nil,
-      let start = Tournament.dateFrom(startsAt) ?? ISO8601DateFormatter().date(from: startsAt),
-      let end = Tournament.dateFrom(endsAt) ?? ISO8601DateFormatter().date(from: endsAt)
-    else { return false }
-    return start <= now && now < end && (city == "全国" || city == selectedCity)
-  }
-  static let bundled: [HomePromotion] = {
-    guard
-      let url = Bundle.main.url(
-        forResource: "HomePromotions", withExtension: "json", subdirectory: "Media"),
-      let data = try? Data(contentsOf: url)
-    else { return [] }
-    return (try? JSONDecoder().decode([HomePromotion].self, from: data)) ?? []
-  }()
-}

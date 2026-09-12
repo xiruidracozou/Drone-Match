@@ -6,6 +6,7 @@ struct TournamentParticipant: Decodable, Identifiable {
 struct TournamentDetail: View {
   @EnvironmentObject private var store: AppStore
   let initial: Tournament
+  @State private var currentEvent: Tournament?
   @State private var showRegistration = false
   @State private var showLogin = false
   @State private var selection = "概览"
@@ -13,7 +14,9 @@ struct TournamentDetail: View {
   @State private var loading = true
   @State private var error: String?
   private var isOrganizer: Bool { store.account?.role == "organizer" }
-  private var event: Tournament { store.tournaments.first { $0.id == initial.id } ?? initial }
+  private var event: Tournament {
+    currentEvent ?? store.tournaments.first { $0.id == initial.id } ?? initial
+  }
   private var entries: [Registration] { store.registrations.filter { $0.tournamentId == event.id } }
   var body: some View {
     ScrollView {
@@ -23,6 +26,10 @@ struct TournamentDetail: View {
             StatusBadge(text: event.statusLabel)
             Spacer()
             Text(event.category + " 级").font(TypeScale.caption).foregroundStyle(.secondary)
+          }
+          if event.hidden == true {
+            Text("平台已下架：" + (event.moderationReason ?? "")).font(.subheadline).foregroundStyle(
+              .secondary)
           }
           Text(event.title).font(TypeScale.title).fixedSize(horizontal: false, vertical: true)
           Text(event.organizerName).font(TypeScale.body).foregroundStyle(.secondary)
@@ -148,6 +155,7 @@ struct TournamentDetail: View {
     loading = true
     defer { loading = false }
     do {
+      currentEvent = try await store.request("tournaments/\(initial.id)")
       participants = try await store.request("tournaments/\(event.id)/participants")
       error = nil
     } catch is CancellationError {} catch { self.error = "无法加载参赛队伍，请重试。" }
@@ -155,6 +163,7 @@ struct TournamentDetail: View {
 }
 
 struct TournamentDestination: View {
+  @EnvironmentObject private var store: AppStore
   let id: String
   @State private var event: Tournament?
   @State private var error: String?
@@ -177,7 +186,7 @@ struct TournamentDestination: View {
   }
   private func load() async {
     error = nil
-    do { event = try await APIClient().request("tournaments/\(id)") } catch {
+    do { event = try await store.request("tournaments/\(id)") } catch {
       self.error = (error as? APIError)?.message ?? "请检查服务连接后重试。"
     }
   }
